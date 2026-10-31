@@ -56,9 +56,21 @@ export class Charger extends DurableObject {
 
   async fetch(req) {
     const url = new URL(req.url);
+
+    // Registro de intentos de conexión del cargador (para diagnosticar)
+    if (url.pathname === '/attempt') {
+      const a = await req.json().catch(() => null);
+      if (a) {
+        this.d.attempts = [a, ...(this.d.attempts || [])].slice(0, 5);
+        await this.save();
+        this.broadcast();
+      }
+      return new Response('ok');
+    }
+
     const [client, server] = Object.values(new WebSocketPair());
 
-    if (url.pathname.startsWith('/ocpp/')) {
+    if (url.pathname === '/ocpp' || url.pathname.startsWith('/ocpp/')) {
       for (const old of this.ctx.getWebSockets('ocpp')) { try { old.close(1000, 'reemplazado'); } catch {} }
       this.ctx.acceptWebSocket(server, ['ocpp']);
       this.d.chargerId = decodeURIComponent(url.pathname.slice(6)) || 'cargador';
@@ -507,6 +519,7 @@ export class Charger extends DurableObject {
       learning: d.learning > now,
       boot: d.boot,
       chargerId: d.chargerId,
+      attempts: d.attempts || [],
       history,
     };
   }

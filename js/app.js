@@ -278,6 +278,13 @@ function renderKeys() {
   }).join('');
 }
 
+function attemptRow() {
+  const a = S.attempts && S.attempts[0];
+  if (!a) return '<dt>Intentos</dt><dd class="bad">El cargador no llamó</dd>';
+  const det = `${a.scheme} ${a.path} · protocolo «${a.proto || 'ninguno'}» · ${a.ua || 'sin nombre'}`;
+  return `<dt>Último intento</dt><dd class="${a.result === 'aceptado' ? 'ok' : 'bad'}" title="${esc(det)}">${hhmm(a.t)} · ${esc(a.result)}</dd>`;
+}
+
 function renderEquip() {
   const total = S.meterTotal + (activeSession() ? S.session.energy : 0);
   const conn = S.mode === 'sim' ? 'Simulación' : `OCPP 1.6J${S.boot && S.boot.fw ? ' · fw ' + S.boot.fw : ''}`;
@@ -285,6 +292,7 @@ function renderEquip() {
   const tag = S.tags && S.tags[0];
   $('equipInfo').innerHTML = `
     <dt>Conexión</dt><dd>${S.online ? esc(conn) : 'Sin conexión'}</dd>
+    ${!S.online && S.mode === 'live' ? attemptRow() : ''}
     <dt>Conector</dt><dd>${esc(S.connector)}</dd>
     <dt>Fallas</dt><dd class="${S.faults.length ? 'bad' : 'ok'}">${esc(faults)}</dd>
     <dt>Medidor total</dt><dd class="mono">${nf(total, 1)} kWh</dd>

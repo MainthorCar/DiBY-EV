@@ -4,19 +4,30 @@ import { Charger } from './charger.js';
 export { Charger };
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
     const stub = env.CHARGER.get(env.CHARGER.idFromName('main'));
+    const isWs = (req.headers.get('Upgrade') || '').toLowerCase() === 'websocket';
 
-    // El cargador se conecta acá: wss://.../ocpp/<id-del-cargador>
-    if (url.pathname.startsWith('/ocpp/')) {
-      if (req.headers.get('Upgrade') !== 'websocket') return new Response('OCPP: se espera WebSocket', { status: 426 });
+    // El cargador se conecta acá: wss://.../ocpp/<id-del-cargador> (o /ocpp solo)
+    if (url.pathname === '/ocpp' || url.pathname.startsWith('/ocpp/')) {
+      const note = (result) => ctx.waitUntil(stub.fetch('https://do/attempt', {
+        method: 'POST',
+        body: JSON.stringify({
+          t: Date.now(), path: url.pathname, ws: isWs, result, scheme: url.protocol.replace(':', ''),
+          proto: req.headers.get('Sec-WebSocket-Protocol') || '', auth: req.headers.has('Authorization'),
+          ua: (req.headers.get('User-Agent') || '').slice(0, 60),
+        }),
+      }).catch(() => {}));
+      if (!isWs) { note('sin WebSocket'); return new Response('OCPP: se espera WebSocket', { status: 426 }); }
       if (env.OCPP_PASSWORD && !checkBasic(req, env.OCPP_PASSWORD)) {
+        note('contraseña incorrecta');
         return new Response('No autorizado', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="ocpp"' } });
       }
+      note('aceptado');
       return stub.fetch(req);
     }
 
@@ -30,7 +41,7 @@ export default {
     // La página recibe los datos en vivo y manda órdenes por acá
     if (url.pathname === '/api/live') {
       if (url.searchParams.get('token') !== (await panelToken(env))) return new Response('No autorizado', { status: 401 });
-      if (req.headers.get('Upgrade') !== 'websocket') return new Response('Se espera WebSocket', { status: 426 });
+      if (!isWs) return new Response('Se espera WebSocket', { status: 426 });
       return stub.fetch(req);
     }
 
