@@ -106,9 +106,11 @@ function render() {
 
 function renderTop() {
   const c = car();
-  $('carName').textContent = c.name;
-  $('carDot').style.background = c.color;
-  $('carDot').style.color = c.color;
+  const plugged = !!activeSession() || ['Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'].includes(S.status);
+  const col = plugged ? c.color : '#7E9389';
+  $('carName').textContent = plugged ? c.name : 'Sin auto enchufado';
+  $('carDot').style.background = col;
+  $('carDot').style.color = col;
   const key = S.keys.find((k) => k.id === S.keyId);
   $('keyName').textContent = key && activeSession() ? `· llave «${key.name}»` : '';
   const ago = Math.round((Date.now() - S.lastSeen) / 1000);
@@ -129,11 +131,18 @@ function renderNow() {
   pill.dataset.kind = kind;
 
   const charging = S.status === 'Charging';
-  const soc = Math.round(S.soc);
-  $('socVal').textContent = soc;
+  // El % solo tiene sentido con un auto cargando (o recién terminado)
+  const known = !!S.session && (activeSession() || S.status === 'Finishing') && S.soc != null;
+  const soc = known ? Math.round(S.soc) : null;
+  $('socVal').textContent = known ? soc : '—';
+  $('socSub').textContent = known ? 'batería estimada'
+    : !S.online ? 'cargador desconectado'
+    : S.status === 'Preparing' ? 'auto enchufado'
+    : S.status === 'Faulted' ? 'revisar el cargador'
+    : 'listo para cargar';
   $('targetVal').textContent = targetTxt(S.schedule);
-  $('ringArc').setAttribute('stroke-dasharray', `${((RING_C * S.soc) / 100).toFixed(1)} ${RING_C.toFixed(1)}`);
-  $('ringSvg').setAttribute('aria-label', `Batería estimada ${soc} por ciento`);
+  $('ringArc').setAttribute('stroke-dasharray', `${known ? ((RING_C * S.soc) / 100).toFixed(1) : 0} ${RING_C.toFixed(1)}`);
+  $('ringSvg').setAttribute('aria-label', known ? `Batería estimada ${soc} por ciento` : 'Sin auto cargando');
   const tick = $('ringTick');
   if (S.schedule.mode === 'soc') {
     const th = ((S.schedule.soc / 100) * 360 - 90) * (Math.PI / 180);
@@ -156,7 +165,8 @@ function renderNow() {
     el.row.classList.toggle('off', !on);
     el.fill.style.width = `${Math.min(100, (ph.a / 32) * 100)}%`;
     el.a.textContent = `${nf(ph.a, 1)} A`;
-    el.v.textContent = `${Math.round(ph.v)} V`;
+    el.v.textContent = ph.v > 1 ? `${Math.round(ph.v)} V` : '— V';
+    el.v.classList.toggle('live', ph.v > 1);
   });
 }
 
@@ -424,13 +434,34 @@ document.querySelector('.ring-wrap').addEventListener('click', () => {
 
 /* ---------- Arranque ---------- */
 
+let diagBox = null;
+function renderDiag() {
+  if (!diagBox) return;
+  const d = S.diag || {};
+  const lines = [
+    `Intentos: ${(S.attempts || []).map((a) => `${hhmm(a.t)} ${a.result} ${a.scheme} ${a.path} «${a.proto}»`).join(' | ') || '—'}`,
+    `Ajustes pedidos: ${JSON.stringify(d.cfgSet || {})}`,
+    `Mensajes (último primero):`,
+    ...(d.log || []).map((l) => `${new Date(l.t).toLocaleTimeString('es-AR')} ${l.dir} ${l.m}`),
+    `Configuración del cargador:`,
+    ...(d.cfg || []).map(([k, v]) => `  ${k} = ${v}`),
+  ];
+  diagBox.textContent = lines.join('\n');
+}
+
 function start(src) {
   source = src;
+  if (new URLSearchParams(location.search).has('diag') && !diagBox) {
+    diagBox = document.createElement('pre');
+    diagBox.className = 'diag';
+    document.body.appendChild(diagBox);
+  }
   source.subscribe((st) => {
     S = st;
     if (!form) { form = { ...st.schedule }; renderForm(); }
     document.querySelector('.c-keys').classList.toggle('learning', !!S.learning || $('addKey').disabled);
     render();
+    renderDiag();
   });
 }
 

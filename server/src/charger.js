@@ -85,6 +85,10 @@ export class Charger extends DurableObject {
 
     this.ctx.acceptWebSocket(server, ['ui']);
     server.send(JSON.stringify({ type: 'state', state: this.snapshot() }));
+    // Al abrir la página, pedir datos frescos al cargador
+    if (this.ctx.getWebSockets('ocpp').length && Date.now() - (this.lastTrigger || 0) > 10000) {
+      setTimeout(() => this.trigger().catch(() => {}), 100);
+    }
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -107,6 +111,7 @@ export class Charger extends DurableObject {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
     this.d.lastSeen = Date.now();
+    this.logMsg('←', raw);
     const [type, id] = m;
 
     if (type === 2) {
@@ -283,7 +288,9 @@ export class Charger extends DurableObject {
     const ws = this.ctx.getWebSockets('ocpp')[0];
     if (!ws) return Promise.reject(new Error('El cargador no está conectado'));
     const id = crypto.randomUUID();
-    ws.send(JSON.stringify([2, id, action, payload]));
+    const out = JSON.stringify([2, id, action, payload]);
+    this.logMsg('→', out);
+    ws.send(out);
     return new Promise((res, rej) => {
       this.pending.set(id, { res, rej });
       setTimeout(() => { if (this.pending.delete(id)) rej(new Error('El cargador no respondió')); }, 15000);
@@ -291,9 +298,33 @@ export class Charger extends DurableObject {
   }
 
   async configure() {
-    const set = (key, value) => this.call('ChangeConfiguration', { key, value }).catch(() => null);
+    const MEAS = 'Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage';
+    const results = {};
+    const set = async (key, value) => {
+      const r = await this.call('ChangeConfiguration', { key, value }).catch((e) => ({ status: 'Error: ' + e.message }));
+      results[key] = r.status;
+    };
+    // Mientras carga: cada 10 s
     await set('MeterValueSampleInterval', '10');
-    await set('MeterValuesSampledData', 'Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage');
+    await set('MeterValuesSampledData', MEAS);
+    // Siempre (aunque no cargue): cada 15 s, para ver voltaje y fases con el cargador encendido
+    await set('ClockAlignedDataInterval', '15');
+    await set('MeterValuesAlignedData', MEAS);
+    this.d.cfgSet = results;
+    try {
+      const r = await this.call('GetConfiguration', {});
+      this.d.cfg = (r.configurationKey || []).map((k) => [k.key, k.value]).slice(0, 150);
+    } catch {}
+    await this.save();
+    await this.trigger();
+    this.broadcast();
+  }
+
+  // Pide al cargador los valores actuales y su estado ya mismo
+  async trigger() {
+    this.lastTrigger = Date.now();
+    await this.call('TriggerMessage', { requestedMessage: 'MeterValues', connectorId: 1 }).catch(() => {});
+    await this.call('TriggerMessage', { requestedMessage: 'StatusNotification', connectorId: 1 }).catch(() => {});
   }
 
   profile(periods) {
@@ -520,6 +551,7 @@ export class Charger extends DurableObject {
       boot: d.boot,
       chargerId: d.chargerId,
       attempts: d.attempts || [],
+      diag: { cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [] },
       history,
     };
   }
@@ -532,6 +564,12 @@ export class Charger extends DurableObject {
   event(e) {
     const msg = JSON.stringify({ type: 'event', ...e });
     for (const ws of this.ctx.getWebSockets('ui')) { try { ws.send(msg); } catch {} }
+  }
+
+  logMsg(dir, raw) {
+    this.log = this.log || [];
+    this.log.unshift({ t: Date.now(), dir, m: String(raw).slice(0, 400) });
+    if (this.log.length > 20) this.log.length = 20;
   }
 
   async save() {
