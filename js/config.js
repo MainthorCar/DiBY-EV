@@ -1,6 +1,6 @@
 // Configuración general. Lo que se cambia a mano está acá.
 export const CONFIG = {
-  version: '0.2.0',
+  version: '0.3.0',
 
   // Precio por kWh para calcular el costo de cada carga (en pesos).
   tariff: 150,
@@ -14,6 +14,6 @@ export const CONFIG = {
   ],
   simBatteryKWh: 26.7,
 
-  // Dirección del servidor en Cloudflare (paso 2). Mientras sea null, la página usa datos simulados.
-  server: null,
+  // Dirección del servidor en Cloudflare. Con ?demo en la dirección se ven datos simulados.
+  server: 'https://diby-ev.mainthorcar.workers.dev',
 };
