@@ -177,6 +177,7 @@ export class Charger extends DurableObject {
       case 'StartTransaction': {
         const status = this.authorize(p.idTag);
         const tx = d.txSeq++;
+        if (status !== 'Accepted') return { transactionId: tx, idTagInfo: { status } }; // desconocido: no se anota nada
         const key = d.keys.find((k) => k.tag === p.idTag);
         d.carId = key ? key.carId || null : p.idTag === PANEL_TAG ? d.carId : null;
         const socStart = d.carId ? d.socByCar[d.carId] ?? null : null;
@@ -231,7 +232,8 @@ export class Charger extends DurableObject {
     const now = Date.now();
     d.tags = [{ tag, t: now }, ...d.tags.filter((x) => x.tag !== tag)].slice(0, 6);
     let key = d.keys.find((k) => k.tag === tag);
-    if (!key && (d.learning > now || d.keys.length === 0)) {
+    // Solo se registra una llave nueva si alguien con la clave tocó «Agregar llave» (1 minuto)
+    if (!key && d.learning > now) {
       key = { id: 'k' + crypto.randomUUID().slice(0, 8), tag, name: `Llave ${d.keys.length + 1}`, carId: null, lastT: now };
       d.keys.push(key);
       d.learning = 0;
