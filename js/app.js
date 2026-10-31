@@ -138,7 +138,7 @@ function renderTop() {
 }
 
 function renderNow() {
-  const [label, kind] = S.reached ? ['Objetivo listo', 'done'] : STATUS[S.status] || [S.status, 'idle'];
+  const [label, kind] = S.pendingStart ? ['Esperando el auto', 'wait'] : S.reached ? ['Objetivo listo', 'done'] : STATUS[S.status] || [S.status, 'idle'];
   const pill = $('statusPill');
   pill.textContent = label;
   pill.dataset.kind = kind;
@@ -412,8 +412,9 @@ function renderEquip() {
     <dt>Versión</dt><dd class="mono">${CONFIG.version}</dd>`;
   const st = S.status;
   const t = $('btnToggle');
-  t.textContent = st === 'Charging' ? 'Pausar' : st.startsWith('Suspended') ? 'Reanudar' : myKey() ? 'Cargar' : 'Iniciar';
-  t.disabled = !S.online || ['Unavailable', 'Faulted', 'Offline', 'Available'].includes(st);
+  t.textContent = S.pendingStart ? 'Cancelar' : st === 'Charging' ? 'Pausar' : st.startsWith('Suspended') ? 'Reanudar' : myKey() ? 'Cargar' : 'Iniciar';
+  t.disabled = !S.online || (!S.pendingStart && ['Unavailable', 'Faulted', 'Offline'].includes(st));
+  t.classList.toggle('warn', !!S.pendingStart);
   $('btnStop').disabled = !S.online || !activeSession();
   $('btnUnlock').disabled = !S.online;
   $('btnReset').disabled = !S.online;
@@ -466,6 +467,12 @@ $('progOn').addEventListener('change', (e) => {
 /* ---------- Controles ---------- */
 
 $('btnToggle').addEventListener('click', () => {
+  if (S && S.pendingStart) { run('cancelStart'); return; }
+  const st = S ? S.status : '';
+  const starting = !activeSession() && !['Charging', 'SuspendedEV', 'SuspendedEVSE'].includes(st);
+  if (starting && !confirm(st === 'Available'
+    ? '¿Iniciar la carga? El cargador va a esperar 1 minuto a que enchufes el auto.'
+    : '¿Iniciar la carga ahora?')) return;
   const k = myKey();
   run('toggle', k ? { tag: 'APP-' + DEV } : undefined);
 });

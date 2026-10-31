@@ -169,6 +169,7 @@ export class Charger extends DurableObject {
         d.connector = ['Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'].includes(p.status) ? 'Conectado' : 'Libre';
         d.faults = p.errorCode && p.errorCode !== 'NoError' ? [p.errorCode + (p.info ? ': ' + p.info : '')] : [];
         if (p.status !== 'Charging') d.kw = 0;
+        if (p.status === 'Charging' || (p.status === 'Available' && Date.now() - (d.pendingStart || 0) > 5000)) d.pendingStart = 0;
         return {};
 
       case 'Authorize':
@@ -181,6 +182,7 @@ export class Charger extends DurableObject {
         const key = d.keys.find((k) => k.tag === p.idTag);
         d.carId = key ? key.carId || null : p.idTag === PANEL_TAG ? d.carId : null;
         const socStart = d.carId ? d.socByCar[d.carId] ?? null : null;
+        d.pendingStart = 0;
         const start = Date.parse(p.timestamp) || now;
         const day = this.day(start);
         const h = hk(d.carId);
@@ -333,6 +335,8 @@ export class Charger extends DurableObject {
     // Siempre (aunque no cargue): cada 15 s, para ver voltaje y fases con el cargador encendido
     await set('ClockAlignedDataInterval', '15');
     await set('MeterValuesAlignedData', MEAS);
+    // Si se autoriza una carga y nadie enchufa el auto, se cancela sola al minuto
+    await set('ConnectionTimeOut', '60');
     this.d.cfgSet = results;
     try {
       const r = await this.call('GetConfiguration', {});
@@ -430,7 +434,16 @@ export class Charger extends DurableObject {
         const own = arg && arg.tag ? d.keys.find((k) => k.tag === arg.tag) : null;
         const key = own || d.keys.find((k) => k.carId === d.carId);
         const r = await this.call('RemoteStartTransaction', { connectorId: 1, idTag: key ? key.tag : PANEL_TAG });
-        return r.status === 'Accepted' ? { ok: true, msg: 'Carga iniciada' } : { ok: false, msg: 'El cargador no aceptó iniciar' };
+        if (r.status !== 'Accepted') return { ok: false, msg: 'El cargador no aceptó iniciar' };
+        d.pendingStart = Date.now();
+        return { ok: true, msg: s ? 'Carga iniciada' : 'Listo: enchufá el auto (tenés 1 minuto)' };
+      }
+      case 'cancelStart': {
+        d.pendingStart = 0;
+        // Poner el conector fuera de servicio y volverlo a habilitar cancela la autorización pendiente
+        await this.call('ChangeAvailability', { connectorId: 1, type: 'Inoperative' }).catch(() => null);
+        setTimeout(() => this.call('ChangeAvailability', { connectorId: 1, type: 'Operative' }).catch(() => {}), 3000);
+        return { ok: true, msg: 'Inicio cancelado' };
       }
       case 'stop': {
         if (!s) return { ok: false, msg: 'No hay una carga en curso' };
@@ -637,6 +650,7 @@ export class Charger extends DurableObject {
       keys: d.keys.map((k) => ({ id: k.id, name: k.name, carId: k.carId, last: this.lastLabel(k.lastT), dev: String(k.tag).startsWith('APP-') ? k.tag.slice(4) : null })),
       tags: d.tags.slice(0, 3),
       learning: d.learning > now,
+      pendingStart: !!d.pendingStart && now - d.pendingStart < 90000 && !(s && !s.closed),
       boot: d.boot,
       chargerId: d.chargerId,
       attempts: d.attempts || [],

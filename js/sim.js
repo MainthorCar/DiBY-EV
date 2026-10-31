@@ -207,6 +207,10 @@ export class SimSource {
         this.emit();
         return { ok: true, msg: 'Teléfono registrado como llave', keyId: k.id };
       }
+      case 'cancelStart':
+        s.pendingStart = false;
+        msg = 'Inicio cancelado';
+        break;
       case 'setTariff':
         s.tariff = Number(arg);
         s.tariffSince = Date.now();
