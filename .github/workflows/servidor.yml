@@ -15,12 +15,9 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: server
           command: deploy
           secrets: |
-            OCPP_PASSWORD
             PANEL_PASSWORD
         env:
-          OCPP_PASSWORD: ${{ secrets.OCPP_PASSWORD }}
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
