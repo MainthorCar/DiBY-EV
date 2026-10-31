@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>DiBY EV</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app" data-tab="now">
+
+  <header class="top">
+    <div class="brand">
+      <span class="brand-name">DiBY <em>EV</em></span>
+      <span class="brand-sub">EVlink Pro AC · 22 kW</span>
+      <span class="demo" id="demoTag" hidden>DEMO</span>
+    </div>
+    <button class="carchip" id="carChip" type="button" aria-haspopup="dialog" aria-label="Cambiar auto">
+      <span class="dot breathe" id="carDot"></span>
+      <span id="carName">—</span>
+      <span class="muted" id="keyName"></span>
+    </button>
+    <div class="status">
+      <span class="conn"><span class="dot breathe" id="connDot"></span><span id="connText">Conectando…</span></span>
+      <span class="clock mono" id="clock">--:--</span>
+    </div>
+  </header>
+
+  <main class="board">
+    <div class="row row-top">
+
+      <section class="card c-now" data-tab="now" aria-label="Estado actual">
+        <div class="card-head"><h2>Ahora</h2><span class="pill" id="statusPill">—</span></div>
+        <div class="ring-wrap">
+          <svg class="ring" viewBox="0 0 220 220" role="img" id="ringSvg" aria-label="Batería estimada">
+            <defs>
+              <linearGradient id="ringG" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#19C8FF"/>
+                <stop offset="1" stop-color="#2BFF88"/>
+              </linearGradient>
+              <filter id="glowR" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="5" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <circle cx="110" cy="110" r="94" fill="none" stroke="#0C1611" stroke-width="12"/>
+            <g class="spin" id="ringSpin"><circle cx="110" cy="110" r="76" fill="none" stroke="#19C8FF" stroke-opacity=".55" stroke-width="2" stroke-dasharray="2 10" stroke-linecap="round"/></g>
+            <circle id="ringArc" cx="110" cy="110" r="94" fill="none" stroke="url(#ringG)" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 600" transform="rotate(-90 110 110)" filter="url(#glowR)"/>
+            <line id="ringTick" stroke="#fff" stroke-width="3" stroke-linecap="round" filter="url(#glowR)"/>
+          </svg>
+          <div class="ring-center">
+            <span class="soc mono"><span id="socVal">--</span><small>%</small></span>
+            <span class="sub">batería estimada</span>
+            <span class="sub2">objetivo <b id="targetVal">--</b></span>
+          </div>
+        </div>
+        <div class="cable" id="cable">
+          <svg class="icon" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#19C8FF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Cargador" style="filter:drop-shadow(0 0 6px #19C8FF)">
+            <rect x="5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11.5 7 L9 12 H12 L10 17"/><path d="M16 9 H18.5 V17"/>
+          </svg>
+          <div class="cable-line"><span class="cable-flow"></span><span class="kw-pill mono"><span id="kwVal">0,00</span> <small>kW</small></span></div>
+          <svg class="icon" width="38" height="34" viewBox="0 0 26 24" fill="none" stroke="#2BFF88" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Auto" style="filter:drop-shadow(0 0 6px #2BFF88)">
+            <path d="M2 15.5 L4 10 Q5 8 7.5 8 H17 Q19.5 8 20.8 10 L24 15.5 V18 H2 Z"/><circle cx="7" cy="18" r="2"/><circle cx="19" cy="18" r="2"/>
+          </svg>
+        </div>
+        <div class="eta"><span>termina <b id="etaEnd">—</b></span><span>faltan <b id="etaLeft">—</b></span></div>
+        <div class="phases" id="phases"></div>
+      </section>
+
+      <section class="card blue c-power" data-tab="now" aria-label="Potencia">
+        <div class="card-head">
+          <h2>Potencia de la sesión</h2>
+          <div class="seg" id="rangeSeg">
+            <button type="button" data-range="15m" aria-pressed="false">15 min</button>
+            <button type="button" data-range="1h" aria-pressed="false">1 hora</button>
+            <button type="button" data-range="session" aria-pressed="true">Sesión</button>
+          </div>
+        </div>
+        <div class="chart">
+          <div class="yaxis" id="yAxis"></div>
+          <div class="plot">
+            <svg id="chartSvg" role="img" aria-label="Potencia en kW durante la sesión"></svg>
+            <div class="xaxis" id="xAxis"></div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><span>Energía cargada</span><span class="v glow" id="stEnergy">—</span></div>
+          <div class="stat"><span>Duración</span><span class="v" id="stDur">—</span></div>
+          <div class="stat"><span>Batería</span><span class="v" id="stBatt">—</span></div>
+          <div class="stat"><span id="stCostLbl">Costo</span><span class="v" id="stCost">—</span></div>
+        </div>
+      </section>
+
+      <section class="card c-progsum" data-tab="now" aria-label="Programación actual">
+        <div>
+          <span class="lbl-sm">PROGRAMACIÓN</span>
+          <span class="progsum-txt" id="progSum">—</span>
+        </div>
+        <button type="button" class="btn-outline" data-go="prog">Cambiar</button>
+      </section>
+
+      <section class="card c-prog" data-tab="prog" aria-label="Programar carga">
+        <div class="card-head"><h2>Programar</h2></div>
+        <div class="seg seg3" id="modeSeg">
+          <button type="button" data-mode="soc">Porcentaje</button>
+          <button type="button" data-mode="time">Tiempo</button>
+          <button type="button" data-mode="energy">Energía</button>
+        </div>
+
+        <div class="mode" data-mode="soc">
+          <div class="big-row"><label for="socRange">Cargar hasta</label><span class="big" id="socOut">80 %</span></div>
+          <input type="range" id="socRange" min="20" max="100" step="5">
+          <div class="chips" id="socChips">
+            <button type="button" class="chip" data-v="60">60</button>
+            <button type="button" class="chip" data-v="70">70</button>
+            <button type="button" class="chip" data-v="80">80</button>
+            <button type="button" class="chip" data-v="90">90</button>
+            <button type="button" class="chip" data-v="100">100</button>
+          </div>
+        </div>
+        <div class="mode" data-mode="time">
+          <div class="big-row"><label for="timeRange">Cargar durante</label><span class="big" id="timeOut">2 h</span></div>
+          <input type="range" id="timeRange" min="15" max="600" step="15">
+          <div class="chips c4" id="timeChips">
+            <button type="button" class="chip" data-v="60">1 h</button>
+            <button type="button" class="chip" data-v="120">2 h</button>
+            <button type="button" class="chip" data-v="240">4 h</button>
+            <button type="button" class="chip" data-v="480">8 h</button>
+          </div>
+        </div>
+        <div class="mode" data-mode="energy">
+          <div class="big-row"><label for="kwhRange">Cargar</label><span class="big" id="kwhOut">20 kWh</span></div>
+          <input type="range" id="kwhRange" min="1" max="80" step="1">
+          <div class="chips c4" id="kwhChips">
+            <button type="button" class="chip" data-v="5">5</button>
+            <button type="button" class="chip" data-v="10">10</button>
+            <button type="button" class="chip" data-v="20">20</button>
+            <button type="button" class="chip" data-v="40">40</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="lbl">Empezar</span>
+          <div class="three">
+            <button type="button" class="opt" data-start="plug">Al enchufar</button>
+            <button type="button" class="opt" data-start="at">A la hora</button>
+            <input type="time" id="startAt" class="opt time" aria-label="Hora de inicio">
+          </div>
+        </div>
+        <div class="field">
+          <div class="big-row"><label for="ampRange" class="lbl">Límite de corriente</label><span class="mono amp" id="ampOut">32 A</span></div>
+          <input type="range" id="ampRange" min="6" max="32" step="1" class="blue-range">
+        </div>
+        <button type="button" class="btn-primary" id="saveProg">Guardar programación</button>
+      </section>
+    </div>
+
+    <div class="row row-bottom">
+      <section class="card blue c-hist" data-tab="hist" aria-label="Historial">
+        <div class="card-head"><h2>Últimos 7 días</h2><span class="mono total" id="weekTotal">—</span></div>
+        <div class="bars" id="bars"></div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="card c-keys" data-tab="keys" aria-label="Llaves">
+        <div class="card-head"><h2>Llaves</h2><button type="button" class="btn-ghost" id="addKey">+ Agregar llave</button></div>
+        <div class="keylist" id="keyList"></div>
+        <span class="hint" id="keyHint">Para sumar una llave: tocá «Agregar» y apoyala en el cargador.</span>
+      </section>
+
+      <section class="card blue c-equip" data-tab="now hist" aria-label="Equipo">
+        <h2>Equipo</h2>
+        <dl class="info" id="equipInfo"></dl>
+        <div class="controls">
+          <button type="button" class="ctl" id="btnToggle">Pausar</button>
+          <button type="button" class="ctl" id="btnStop">Detener</button>
+          <button type="button" class="ctl" id="btnUnlock">Liberar cable</button>
+          <button type="button" class="ctl" id="btnReset">Reiniciar</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <nav class="tabbar" aria-label="Secciones">
+    <button type="button" data-go="now" aria-current="page">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 L4 14 H12 L11 22 L20 10 H12 Z"/></svg>Ahora</button>
+    <button type="button" data-go="prog">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7 V12 L15 14"/></svg>Programar</button>
+    <button type="button" data-go="hist">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20 V11"/><path d="M12 20 V5"/><path d="M19 20 V14"/></svg>Historial</button>
+    <button type="button" data-go="keys">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12 L20 3"/><path d="M17 6 L20 9"/></svg>Llaves</button>
+  </nav>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="carDialog" aria-labelledby="carDlgTitle">
+  <h2 id="carDlgTitle">¿Qué auto está enchufado?</h2>
+  <div class="carlist" id="carList"></div>
+  <button type="button" class="btn-ghost wide" id="carClose">Cerrar</button>
+</dialog>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
