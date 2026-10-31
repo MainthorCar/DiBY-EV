@@ -426,7 +426,9 @@ export class Charger extends DurableObject {
           d.reached = false;
           return { ok: true, msg: 'Carga reanudada' };
         }
-        const key = d.keys.find((k) => k.carId === d.carId);
+        // Si la orden viene de un teléfono registrado, la carga queda a nombre de ese teléfono
+        const own = arg && arg.tag ? d.keys.find((k) => k.tag === arg.tag) : null;
+        const key = own || d.keys.find((k) => k.carId === d.carId);
         const r = await this.call('RemoteStartTransaction', { connectorId: 1, idTag: key ? key.tag : PANEL_TAG });
         return r.status === 'Accepted' ? { ok: true, msg: 'Carga iniciada' } : { ok: false, msg: 'El cargador no aceptó iniciar' };
       }
@@ -525,6 +527,17 @@ export class Charger extends DurableObject {
         if (s) { s.tariff = v; this.book(s); }
         return { ok: true, msg: 'Precio guardado' };
       }
+      case 'registerApp': {
+        const dev = String(arg?.dev || '').replace(/[^A-Z0-9]/gi, '').slice(0, 32);
+        if (dev.length < 8) return { ok: false, msg: 'Teléfono no reconocido' };
+        const tag = 'APP-' + dev;
+        let k = d.keys.find((x) => x.tag === tag);
+        if (!k) {
+          k = { id: 'k' + crypto.randomUUID().slice(0, 8), tag, name: String(arg.name || 'Teléfono').slice(0, 30), carId: null, app: true, lastT: Date.now() };
+          d.keys.push(k);
+        }
+        return { ok: true, msg: 'Teléfono registrado como llave', keyId: k.id };
+      }
       case 'learnKey':
         d.learning = Date.now() + 60000;
         return { ok: true, msg: 'Apoyá la llave en el cargador', learning: true };
@@ -621,7 +634,7 @@ export class Charger extends DurableObject {
       tariffSince: d.tariffSince,
       days: d.history,
       series: this.series,
-      keys: d.keys.map((k) => ({ id: k.id, name: k.name, carId: k.carId, last: this.lastLabel(k.lastT) })),
+      keys: d.keys.map((k) => ({ id: k.id, name: k.name, carId: k.carId, last: this.lastLabel(k.lastT), dev: String(k.tag).startsWith('APP-') ? k.tag.slice(4) : null })),
       tags: d.tags.slice(0, 3),
       learning: d.learning > now,
       boot: d.boot,

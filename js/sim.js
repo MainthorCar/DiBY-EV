@@ -201,6 +201,12 @@ export class SimSource {
         this.emit();
         return { ok: true, msg: 'Auto guardado', carId: c.id };
       }
+      case 'registerApp': {
+        let k = s.keys.find((x) => x.dev === arg.dev);
+        if (!k) { k = { id: 'k' + Date.now(), name: arg.name, carId: null, last: 'recién', dev: arg.dev }; s.keys.push(k); }
+        this.emit();
+        return { ok: true, msg: 'Teléfono registrado como llave', keyId: k.id };
+      }
       case 'setTariff':
         s.tariff = Number(arg);
         s.tariffSince = Date.now();

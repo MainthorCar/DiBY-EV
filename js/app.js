@@ -23,7 +23,12 @@ const STATUS = {
 };
 
 const app = document.querySelector('.app');
-let source = null; // simulador o servidor real (ver "Arranque" al final)
+let source = null;
+// Dentro de la app Android: cada teléfono tiene su llave fija
+const APP = window.DiBYApp || null;
+const DEV = APP ? APP.deviceId() : null;
+if (APP) document.body.classList.add('in-app');
+function myKey() { return DEV && S ? S.keys.find((k) => k.dev === DEV) : null; } // simulador o servidor real (ver "Arranque" al final)
 let S = null;
 let range = 'session';
 let form = null;
@@ -367,18 +372,22 @@ $('mNext').addEventListener('click', () => { if (monthOff < 0) monthOff++; if (S
 let keySig = '';
 function renderKeys() {
   const live = activeSession() ? S.keyId : null;
-  const sig = JSON.stringify([S.keys, live, S.cars]);
+  const sig = JSON.stringify([S.keys, live, S.cars, DEV]);
   if (sig === keySig) return;
   keySig = sig;
+  const regBtn = DEV && !myKey()
+    ? '<button type="button" class="reg-phone" id="regPhone"><b>Registrar este teléfono como llave</b><span>Después iniciás las cargas desde acá, sin apoyar nada.</span></button>' : '';
   if (!S.keys.length) {
-    $('keyList').innerHTML = '<p class="empty">Todavía no hay llaves.<br>Tocá <b>«+ Agregar llave»</b> y apoyá la tarjeta, el llavero o el teléfono en el cargador.</p>';
+    $('keyList').innerHTML = regBtn + '<p class="empty">Todavía no hay llaves.<br>Tocá <b>«+ Agregar llave»</b> y apoyá la tarjeta, el llavero o el teléfono en el cargador.</p>';
     return;
   }
   $('keyList').innerHTML = S.keys.map((k) => {
     const c = S.cars.find((x) => x.id === k.carId) || { name: 'Sin auto asignado', color: '#7E9389' };
     const on = k.id === live;
-    return `<button type="button" class="key${on ? ' active' : ''}" data-key="${k.id}" title="Tocá para editar"><span class="kd" style="background:${c.color};box-shadow:0 0 10px ${c.color}"></span><span><span class="kn">${esc(k.name)}</span><span class="kc">${esc(c.name)}</span></span><span class="kl">${on ? 'en uso' : esc(k.last)}</span></button>`;
+    const mine = DEV && k.dev === DEV ? ' <span class="mine">este teléfono</span>' : '';
+    return `<button type="button" class="key${on ? ' active' : ''}" data-key="${k.id}" title="Tocá para editar"><span class="kd" style="background:${c.color};box-shadow:0 0 10px ${c.color}"></span><span><span class="kn">${esc(k.name)}${mine}</span><span class="kc">${esc(c.name)}</span></span><span class="kl">${on ? 'en uso' : esc(k.last)}</span></button>`;
   }).join('');
+  if (regBtn) $('keyList').insertAdjacentHTML('afterbegin', regBtn);
 }
 
 function attemptRow() {
@@ -403,7 +412,7 @@ function renderEquip() {
     <dt>Versión</dt><dd class="mono">${CONFIG.version}</dd>`;
   const st = S.status;
   const t = $('btnToggle');
-  t.textContent = st === 'Charging' ? 'Pausar' : st.startsWith('Suspended') ? 'Reanudar' : 'Iniciar';
+  t.textContent = st === 'Charging' ? 'Pausar' : st.startsWith('Suspended') ? 'Reanudar' : myKey() ? 'Cargar' : 'Iniciar';
   t.disabled = !S.online || ['Unavailable', 'Faulted', 'Offline', 'Available'].includes(st);
   $('btnStop').disabled = !S.online || !activeSession();
   $('btnUnlock').disabled = !S.online;
@@ -456,7 +465,24 @@ $('progOn').addEventListener('change', (e) => {
 
 /* ---------- Controles ---------- */
 
-$('btnToggle').addEventListener('click', () => run('toggle'));
+$('btnToggle').addEventListener('click', () => {
+  const k = myKey();
+  run('toggle', k ? { tag: 'APP-' + DEV } : undefined);
+});
+$('keyList').addEventListener('click', async (e) => {
+  if (!e.target.closest('#regPhone')) return;
+  const r = await run('registerApp', { dev: DEV, name: 'Teléfono ' + (APP.deviceName() || '') });
+  if (r && r.ok && r.keyId) setTimeout(() => openKey(r.keyId, true), 300);
+});
+
+// Botón "atrás" del teléfono: cierra lo abierto antes de salir de la app
+window.diBYBack = () => {
+  const dlg = [...document.querySelectorAll('dialog')].find((d) => d.open && d.id !== 'loginDlg');
+  if (dlg) { dlg.close(); return true; }
+  if (!$('settings').hidden) { $('settings').hidden = true; return true; }
+  if (app.dataset.tab !== 'now') { document.querySelector('.tabbar [data-go=now]').click(); return true; }
+  return false;
+};
 $('btnStop').addEventListener('click', () => { if (confirm('¿Detener la carga?')) run('stop'); });
 $('btnUnlock').addEventListener('click', () => run('unlock'));
 $('btnReset').addEventListener('click', () => { if (confirm('¿Reiniciar el cargador? Tarda unos segundos.')) run('reset'); });
