@@ -71,13 +71,20 @@ svg.innerHTML = `
 
 /* ---------- Dibujo ---------- */
 
-function car() { return S.cars.find((c) => c.id === S.carId) || S.cars[0]; }
+const NOCAR = { id: '_', name: 'Sin asignar', color: '#7E9389' };
+function car() {
+  const id = activeSession() ? S.session.carId : S.carId;
+  return S.cars.find((c) => c.id === id) || null;
+}
+function carById(id) { return S.cars.find((c) => c.id === id) || NOCAR; }
 function activeSession() { return S.session && !S.session.closed ? S.session : null; }
 
 function projection() {
   const s = activeSession();
   if (!s || S.status !== 'Charging' || S.kw < 0.2) return null;
   const sch = S.schedule;
+  if (!sch.enabled) return null;
+  if (sch.mode === 'soc' && (S.soc == null || !S.batteryKWh)) return null;
   let remMin;
   if (sch.mode === 'soc') remMin = (((sch.soc - S.soc) / 100) * S.batteryKWh) / S.kw * 60;
   else if (sch.mode === 'energy') remMin = (sch.kwh - s.energy) / S.kw * 60;
@@ -87,6 +94,7 @@ function projection() {
 }
 
 function targetTxt(sch) {
+  if (!sch.enabled) return 'carga libre';
   if (sch.mode === 'soc') return `${sch.soc} %`;
   if (sch.mode === 'energy') return `${sch.kwh} kWh`;
   return hoursTxt(sch.minutes);
@@ -107,8 +115,8 @@ function render() {
 function renderTop() {
   const c = car();
   const plugged = !!activeSession() || ['Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'].includes(S.status);
-  const col = plugged ? c.color : '#7E9389';
-  $('carName').textContent = plugged ? c.name : 'Sin auto enchufado';
+  const col = plugged && c ? c.color : '#7E9389';
+  $('carName').textContent = !plugged ? 'Sin auto enchufado' : c ? c.name : 'Auto sin asignar';
   $('carDot').style.background = col;
   $('carDot').style.color = col;
   const key = S.keys.find((k) => k.id === S.keyId);
@@ -132,19 +140,25 @@ function renderNow() {
 
   const charging = S.status === 'Charging';
   // El % solo tiene sentido con un auto cargando (o recién terminado)
-  const known = !!S.session && (activeSession() || S.status === 'Finishing') && S.soc != null;
+  const withCar = !!S.session && (activeSession() || S.status === 'Finishing');
+  const known = withCar && S.soc != null;
   const soc = known ? Math.round(S.soc) : null;
-  $('socVal').textContent = known ? soc : '—';
+  // Sin % conocido pero cargando: el centro muestra los kWh cargados
+  const showKwh = withCar && !known;
+  $('socVal').textContent = known ? soc : showKwh ? nf(S.session.energy, 1) : '—';
+  $('socUnit').textContent = known ? '%' : showKwh ? 'kWh' : '';
   $('socSub').textContent = known ? 'batería estimada'
+    : showKwh ? 'cargados · tocá para poner el %'
     : !S.online ? 'cargador desconectado'
     : S.status === 'Preparing' ? 'auto enchufado'
     : S.status === 'Faulted' ? 'revisar el cargador'
     : 'listo para cargar';
   $('targetVal').textContent = targetTxt(S.schedule);
+  $('targetVal').parentElement.firstChild.textContent = S.schedule.enabled ? 'objetivo ' : '';
   $('ringArc').setAttribute('stroke-dasharray', `${known ? ((RING_C * S.soc) / 100).toFixed(1) : 0} ${RING_C.toFixed(1)}`);
   $('ringSvg').setAttribute('aria-label', known ? `Batería estimada ${soc} por ciento` : 'Sin auto cargando');
   const tick = $('ringTick');
-  if (S.schedule.mode === 'soc') {
+  if (S.schedule.enabled && S.schedule.mode === 'soc') {
     const th = ((S.schedule.soc / 100) * 360 - 90) * (Math.PI / 180);
     tick.setAttribute('x1', 110 + 81 * Math.cos(th)); tick.setAttribute('y1', 110 + 81 * Math.sin(th));
     tick.setAttribute('x2', 110 + 107 * Math.cos(th)); tick.setAttribute('y2', 110 + 107 * Math.sin(th));
@@ -251,6 +265,7 @@ function renderStats() {
 
 function renderProgSummary() {
   const sch = S.schedule;
+  if (!sch.enabled) { $('progSum').innerHTML = '<b>Carga libre</b> · corta el auto'; return; }
   const start = sch.startMode === 'at' ? ` · desde <i>${sch.startAt}</i>` : ' · al enchufar';
   const what = sch.mode === 'time' ? 'Durante' : 'Hasta';
   $('progSum').innerHTML = `${what} <b>${targetTxt(sch)}</b>${start}`;
@@ -258,33 +273,42 @@ function renderProgSummary() {
 
 let histSig = '';
 function renderHist() {
-  const sig = JSON.stringify(S.history.map((d) => Object.values(d.kwh).map((v) => v.toFixed(1))));
+  const sig = JSON.stringify([S.history.map((d) => Object.values(d.kwh).map((v) => v.toFixed(1))), S.cars]);
   if (sig === histSig) return;
   histSig = sig;
   const totals = S.history.map((d) => Object.values(d.kwh).reduce((a, b) => a + b, 0));
   const max = Math.max(10, ...totals);
+  const used = new Set(S.history.flatMap((d) => Object.keys(d.kwh).filter((k) => d.kwh[k] > 0)));
+  const list = [...S.cars, NOCAR];
   $('weekTotal').textContent = `${nf(totals.reduce((a, b) => a + b, 0), 0)} kWh`;
   $('bars').innerHTML = S.history.map((d, i) => {
-    const segs = S.cars.map((c) => {
+    const segs = list.map((c) => {
       const v = d.kwh[c.id] || 0;
       if (v <= 0) return '';
       return `<div class="s" style="height:${((v / max) * 100).toFixed(1)}%;background:${c.color};box-shadow:0 0 10px ${c.color}" title="${c.name}: ${nf(v, 1)} kWh"></div>`;
     }).reverse().join('');
     return `<div class="bar${d.today ? ' today' : ''}"><span class="tot">${nf(totals[i], 0)}</span><div class="stack">${segs}</div><span class="lb">${d.label}</span></div>`;
   }).join('');
-  $('legend').innerHTML = S.cars.map((c) => `<span><i style="background:${c.color};box-shadow:0 0 8px ${c.color}"></i>${c.name}</span>`).join('');
+  const leg = list.filter((c) => used.has(c.id) || (c !== NOCAR));
+  $('legend').innerHTML = leg.length
+    ? leg.map((c) => `<span><i style="background:${c.color};box-shadow:0 0 8px ${c.color}"></i>${esc(c.name)}</span>`).join('')
+    : '<span>Todavía no hay autos. Se crean al registrar una llave.</span>';
 }
 
 let keySig = '';
 function renderKeys() {
   const live = activeSession() ? S.keyId : null;
-  const sig = JSON.stringify([S.keys, live]);
+  const sig = JSON.stringify([S.keys, live, S.cars]);
   if (sig === keySig) return;
   keySig = sig;
+  if (!S.keys.length) {
+    $('keyList').innerHTML = '<p class="empty">Todavía no hay llaves.<br>Tocá <b>«+ Agregar llave»</b> y apoyá la tarjeta, el llavero o el teléfono en el cargador.</p>';
+    return;
+  }
   $('keyList').innerHTML = S.keys.map((k) => {
-    const c = S.cars.find((x) => x.id === k.carId) || { name: 'Sin auto', color: '#7E9389' };
+    const c = S.cars.find((x) => x.id === k.carId) || { name: 'Sin auto asignado', color: '#7E9389' };
     const on = k.id === live;
-    return `<div class="key${on ? ' active' : ''}"><span class="kd" style="background:${c.color};box-shadow:0 0 10px ${c.color}"></span><span><span class="kn">${esc(k.name)}</span><span class="kc">${esc(c.name)}</span></span><span class="kl">${on ? 'en uso' : esc(k.last)}</span></div>`;
+    return `<button type="button" class="key${on ? ' active' : ''}" data-key="${k.id}" title="Tocá para editar"><span class="kd" style="background:${c.color};box-shadow:0 0 10px ${c.color}"></span><span><span class="kn">${esc(k.name)}</span><span class="kc">${esc(c.name)}</span></span><span class="kl">${on ? 'en uso' : esc(k.last)}</span></button>`;
   }).join('');
 }
 
@@ -325,6 +349,11 @@ function setRangeFill(input) {
 }
 
 function renderForm() {
+  $('progOn').checked = !!form.enabled;
+  $('progOnTxt').textContent = form.enabled ? 'Activada' : 'Carga libre';
+  document.querySelector('.c-prog').classList.toggle('off', !form.enabled);
+  document.querySelectorAll('.c-prog .mode input, .c-prog .mode button, .c-prog .field input, .c-prog .field button, #modeSeg button, #saveProg')
+    .forEach((el) => { el.disabled = !form.enabled || (el.id === 'startAt' && form.startMode !== 'at'); });
   document.querySelectorAll('#modeSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === form.mode)));
   document.querySelectorAll('.mode').forEach((m) => m.classList.toggle('on', m.dataset.mode === form.mode));
   const pairs = [['socRange', 'soc', 'socOut', (v) => `${v} %`, 'socChips'], ['timeRange', 'minutes', 'timeOut', hoursTxt, 'timeChips'], ['kwhRange', 'kwh', 'kwhOut', (v) => `${v} kWh`, 'kwhChips']];
@@ -336,7 +365,6 @@ function renderForm() {
   }
   document.querySelectorAll('[data-start]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.start === form.startMode)));
   $('startAt').value = form.startAt;
-  $('startAt').disabled = form.startMode !== 'at';
   $('ampRange').value = form.limitA;
   setRangeFill($('ampRange'));
   $('ampOut').textContent = `${form.limitA} A`;
@@ -351,6 +379,11 @@ document.querySelectorAll('[data-start]').forEach((b) => b.addEventListener('cli
 $('startAt').addEventListener('change', (e) => { form.startAt = e.target.value || '23:00'; });
 $('ampRange').addEventListener('input', (e) => { form.limitA = Number(e.target.value); renderForm(); });
 $('saveProg').addEventListener('click', () => run('setSchedule', { ...form }));
+$('progOn').addEventListener('change', (e) => {
+  form.enabled = e.target.checked;
+  renderForm();
+  run('setSchedule', { ...form });
+});
 
 /* ---------- Controles ---------- */
 
@@ -370,20 +403,103 @@ $('addKey').addEventListener('click', async () => {
   card.classList.add('learning');
   $('addKey').disabled = true;
   $('keyHint').textContent = 'Apoyá la llave en el cargador… (tenés 1 minuto)';
-  await run('learnKey');
+  const r = await run('learnKey');
   card.classList.remove('learning');
+  if (r && r.ok && r.keyId) openKey(r.keyId, true);
   $('addKey').disabled = false;
   $('keyHint').textContent = 'Para sumar una llave: tocá «Agregar» y apoyala en el cargador.';
 });
 
 /* ---------- Auto ---------- */
 
-$('carChip').addEventListener('click', () => {
-  $('carList').innerHTML = S.cars.map((c) => `<button type="button" data-car="${c.id}" aria-pressed="${c.id === S.carId}"><span class="dot" style="background:${c.color};color:${c.color}"></span>${esc(c.name)}</button>`).join('');
-  $('carList').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { run('setCar', b.dataset.car); $('carDialog').close(); }));
-  $('carDialog').showModal();
-});
+function openCarList() {
+  const cur = car();
+  const rows = S.cars.map((c) => `<div class="car-row"><button type="button" class="car-pick" data-car="${c.id}" aria-pressed="${!!cur && c.id === cur.id}"><span class="dot" style="background:${c.color};color:${c.color}"></span><span>${esc(c.name)}<small>${c.batteryKWh ? nf(c.batteryKWh, 1) + ' kWh' : 'batería sin cargar'}</small></span></button><button type="button" class="car-edit" data-edit="${c.id}" aria-label="Editar ${esc(c.name)}">Editar</button></div>`);
+  rows.push(`<div class="car-row"><button type="button" class="car-pick" data-car="" aria-pressed="${!cur}"><span class="dot" style="background:#7E9389;color:#7E9389"></span><span>Sin asignar</span></button></div>`);
+  $('carList').innerHTML = rows.join('');
+  $('carList').querySelectorAll('.car-pick').forEach((b) => b.addEventListener('click', () => { run('setCar', b.dataset.car || null); $('carDialog').close(); }));
+  $('carList').querySelectorAll('.car-edit').forEach((b) => b.addEventListener('click', () => { $('carDialog').close(); openCarForm(b.dataset.edit); }));
+  if (!$('carDialog').open) $('carDialog').showModal();
+}
+$('carChip').addEventListener('click', () => S && openCarList());
 $('carClose').addEventListener('click', () => $('carDialog').close());
+$('carNew').addEventListener('click', () => { $('carDialog').close(); openCarForm(null); });
+
+/* ---------- Editar auto ---------- */
+
+let editingCar = null;
+function openCarForm(id) {
+  editingCar = id;
+  const c = S.cars.find((x) => x.id === id);
+  $('carFormTitle').textContent = c ? 'Editar auto' : 'Nuevo auto';
+  $('carNameIn').value = c ? c.name : '';
+  $('carBatIn').value = c && c.batteryKWh ? c.batteryKWh : '';
+  $('carDel').hidden = !c;
+  $('carFormDlg').showModal();
+  $('carNameIn').focus();
+}
+$('carForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await run('saveCar', { id: editingCar, name: $('carNameIn').value, batteryKWh: Number(String($('carBatIn').value).replace(',', '.')) });
+  if (r && r.ok) $('carFormDlg').close();
+});
+$('carDel').addEventListener('click', async () => {
+  if (!confirm('¿Borrar este auto? Sus llaves quedan sin auto asignado.')) return;
+  const r = await run('deleteCar', editingCar);
+  if (r && r.ok) $('carFormDlg').close();
+});
+$('carFormClose').addEventListener('click', () => $('carFormDlg').close());
+
+/* ---------- Editar llave ---------- */
+
+let editingKey = null;
+function openKey(id, isNew = false) {
+  const k = S.keys.find((x) => x.id === id);
+  if (!k) return;
+  editingKey = id;
+  $('keyDlgTitle').textContent = isNew ? '¡Llave nueva! Ponele nombre' : 'Editar llave';
+  $('keyNameIn').value = isNew ? '' : k.name;
+  $('keyNameIn').placeholder = k.name;
+  const opts = S.cars.map((c) => `<option value="${c.id}"${c.id === k.carId ? ' selected' : ''}>${esc(c.name)}</option>`);
+  opts.push(`<option value=""${!k.carId ? ' selected' : ''}>Sin auto asignado</option>`);
+  opts.push('<option value="__new">+ Nuevo auto…</option>');
+  $('keyCarSel').innerHTML = opts.join('');
+  if (isNew && !S.cars.length) $('keyCarSel').value = '__new';
+  $('keyNewCar').hidden = $('keyCarSel').value !== '__new';
+  $('keyNewCarName').value = '';
+  $('keyNewCarBat').value = '';
+  $('keyDel').hidden = isNew;
+  if (!$('keyDlg').open) $('keyDlg').showModal();
+  $('keyNameIn').focus();
+}
+$('keyList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-key]');
+  if (b) openKey(b.dataset.key);
+});
+$('keyCarSel').addEventListener('change', () => { $('keyNewCar').hidden = $('keyCarSel').value !== '__new'; });
+$('keyForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  let carId = $('keyCarSel').value || null;
+  if (carId === '__new') {
+    const name = $('keyNewCarName').value.trim();
+    if (!name) { toast('Poné el nombre del auto nuevo', true); $('keyNewCarName').focus(); return; }
+    const r = await run('saveCar', { name, batteryKWh: Number(String($('keyNewCarBat').value).replace(',', '.')) });
+    if (!r || !r.ok) return;
+    carId = r.carId;
+  }
+  const name = $('keyNameIn').value.trim() || $('keyNameIn').placeholder;
+  const r = await run('editKey', { id: editingKey, name, carId });
+  if (r && r.ok) {
+    $('keyDlg').close();
+    if (activeSession() && S.keyId === editingKey) run('setCar', carId);
+  }
+});
+$('keyDel').addEventListener('click', async () => {
+  if (!confirm('¿Borrar esta llave? Ya no va a poder iniciar cargas.')) return;
+  const r = await run('deleteKey', editingKey);
+  if (r && r.ok) $('keyDlg').close();
+});
+$('keyCancel').addEventListener('click', () => $('keyDlg').close());
 
 /* ---------- Pestañas (celular) ---------- */
 

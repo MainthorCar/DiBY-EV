@@ -5,12 +5,10 @@ const DAY = 86400000;
 const NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const PANEL_TAG = 'DIBY-PANEL'; // idTag que usa la página para arrancar una carga a distancia
 
-const CARS = [
-  { id: 't1', name: 'Jetour T1 i-DM', color: '#2BFF88', batteryKWh: null },
-  { id: 'dolphin', name: 'BYD Dolphin', color: '#19C8FF', batteryKWh: null },
-  { id: 'kangoo', name: 'Kangoo E-Tech', color: '#A9B8FF', batteryKWh: null },
-];
-const DEFAULT_BATTERY_KWH = 40;
+// Colores neón que se asignan a cada auto nuevo, en orden
+const PALETTE = ['#2BFF88', '#19C8FF', '#A9B8FF', '#7DF9FF', '#B6FF3B', '#5B8CFF', '#E0E7FF', '#3DFFD0'];
+const NOCAR = '_'; // energía de cargas sin auto asignado
+const hk = (carId) => carId || NOCAR;
 
 function defaults() {
   return {
@@ -25,18 +23,19 @@ function defaults() {
     meterTotal: 0,
     txSeq: 1,
     session: null,
-    soc: 50,
+    soc: null,
     socByCar: {},
     reached: false,
     paused: false,
-    carId: CARS[0].id,
-    cars: CARS,
+    carId: null,
+    cars: [],
     tariff: 150,
-    schedule: { mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
+    schedule: { enabled: false, mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
     keys: [],
     tags: [],
     learning: 0,
     history: {},
+    v: 2,
   };
 }
 
@@ -48,6 +47,13 @@ export class Charger extends DurableObject {
     this.tz = Number(env.TZ_OFFSET_MIN || -180) * 60000;
     ctx.blockConcurrencyWhile(async () => {
       this.d = { ...defaults(), ...((await ctx.storage.get('d')) || {}) };
+      if ((this.d.v || 1) < 2) {
+        // v2: sin autos de ejemplo; cada usuario crea los suyos. Carga libre por defecto.
+        const fresh = defaults();
+        Object.assign(this.d, { cars: [], carId: null, soc: null, socByCar: {}, history: {}, schedule: fresh.schedule, v: 2 });
+        this.d.keys = (this.d.keys || []).map((k) => ({ ...k, carId: null }));
+        if (this.d.session) this.d.session.carId = null;
+      }
       this.series = (await ctx.storage.get('series')) || [];
     });
   }
@@ -165,12 +171,12 @@ export class Charger extends DurableObject {
         const status = this.authorize(p.idTag);
         const tx = d.txSeq++;
         const key = d.keys.find((k) => k.tag === p.idTag);
-        if (key && key.carId) d.carId = key.carId;
-        const socStart = d.socByCar[d.carId] ?? 50;
+        d.carId = key ? key.carId || null : p.idTag === PANEL_TAG ? d.carId : null;
+        const socStart = d.carId ? d.socByCar[d.carId] ?? null : null;
         d.session = {
           tx, start: Date.parse(p.timestamp) || now, meterStart: p.meterStart || 0, energy: 0,
           socStart, carId: d.carId, keyId: key ? key.id : null, idTag: p.idTag, closed: false,
-          base: (this.day(now)[d.carId] || 0),
+          base: (this.day(now)[hk(d.carId)] || 0),
         };
         d.soc = socStart;
         d.reached = false;
@@ -191,8 +197,8 @@ export class Charger extends DurableObject {
           if (typeof p.meterStop === 'number') s.energy = Math.max(0, (p.meterStop - s.meterStart) / 1000);
           s.closed = true;
           s.end = Date.parse(p.timestamp) || now;
-          this.day(now)[s.carId] = s.base + s.energy;
-          d.socByCar[s.carId] = Math.round(d.soc);
+          this.day(now)[hk(s.carId)] = s.base + s.energy;
+          if (s.carId && d.soc != null) d.socByCar[s.carId] = Math.round(d.soc);
           if (typeof p.meterStop === 'number') d.meterTotal = p.meterStop / 1000;
           d.kw = 0;
         }
@@ -215,7 +221,7 @@ export class Charger extends DurableObject {
     d.tags = [{ tag, t: now }, ...d.tags.filter((x) => x.tag !== tag)].slice(0, 6);
     let key = d.keys.find((k) => k.tag === tag);
     if (!key && (d.learning > now || d.keys.length === 0)) {
-      key = { id: 'k' + now, tag, name: `Llave ${d.keys.length + 1}`, carId: d.carId, lastT: now };
+      key = { id: 'k' + crypto.randomUUID().slice(0, 8), tag, name: `Llave ${d.keys.length + 1}`, carId: null, lastT: now };
       d.keys.push(key);
       d.learning = 0;
       this.event({ event: 'learned', key: { id: key.id, name: key.name } });
@@ -254,8 +260,11 @@ export class Charger extends DurableObject {
 
     if (s && !s.closed && (!p.transactionId || p.transactionId === s.tx)) {
       if (reg !== null) s.energy = Math.max(0, (reg - s.meterStart) / 1000);
-      d.soc = socMeas !== null ? socMeas : Math.min(100, s.socStart + (s.energy / this.battery(s.carId)) * 100);
-      this.day(Date.now())[s.carId] = s.base + s.energy;
+      const bat = this.battery(s.carId);
+      d.soc = socMeas !== null ? socMeas
+        : s.socStart != null && bat ? Math.min(100, s.socStart + (s.energy / bat) * 100)
+        : s.socStart != null ? s.socStart : null;
+      this.day(Date.now())[hk(s.carId)] = s.base + s.energy;
       const now = Date.now();
       const last = this.series[this.series.length - 1];
       if (!last || now - last.t >= 5000) {
@@ -272,8 +281,9 @@ export class Charger extends DurableObject {
     const s = d.session;
     if (!s || s.closed || d.reached) return;
     const sch = d.schedule;
+    if (!sch.enabled) return; // carga libre: corta el auto
     let hit = false;
-    if (sch.mode === 'soc') hit = d.soc >= sch.soc;
+    if (sch.mode === 'soc') hit = d.soc != null && d.soc >= sch.soc;
     else if (sch.mode === 'energy') hit = s.energy >= sch.kwh;
     else hit = (Date.now() - s.start) / 60000 >= sch.minutes;
     if (hit) {
@@ -349,6 +359,7 @@ export class Charger extends DurableObject {
 
   async applyStart() {
     const sch = this.d.schedule;
+    if (!sch.enabled) return null;
     if (sch.startMode === 'at') {
       const wait = this.secondsUntil(sch.startAt);
       if (wait > 60) {
@@ -397,7 +408,7 @@ export class Charger extends DurableObject {
           return { ok: true, msg: 'Carga en pausa' };
         }
         if (s && String(d.status).startsWith('Suspended')) {
-          await this.setLimit(d.schedule.limitA);
+          await this.setLimit(d.schedule.enabled ? d.schedule.limitA : 32);
           d.paused = false;
           d.reached = false;
           return { ok: true, msg: 'Carga reanudada' };
@@ -423,6 +434,7 @@ export class Charger extends DurableObject {
       case 'setSchedule': {
         const n = (v, lo, hi, def) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : def);
         d.schedule = {
+          enabled: !!arg.enabled,
           mode: ['soc', 'time', 'energy'].includes(arg.mode) ? arg.mode : 'soc',
           soc: n(arg.soc, 20, 100, 80),
           minutes: n(arg.minutes, 15, 1440, 120),
@@ -432,31 +444,56 @@ export class Charger extends DurableObject {
           limitA: n(arg.limitA, 6, 32, 32),
         };
         d.reached = false;
+        const msg = d.schedule.enabled ? 'Programación activada' : 'Carga libre';
         if (s) {
-          try { if (d.schedule.startMode === 'at') await this.applyStart(); else await this.setLimit(d.schedule.limitA); }
-          catch { return { ok: true, msg: 'Guardada (el cargador la aplica en la próxima carga)' }; }
+          try {
+            if (!d.schedule.enabled) await this.setLimit(32);
+            else if (d.schedule.startMode === 'at') await this.applyStart();
+            else await this.setLimit(d.schedule.limitA);
+          } catch { return { ok: true, msg: msg + ' (se aplica en la próxima carga)' }; }
           this.checkTarget();
         }
-        return { ok: true, msg: 'Programación guardada' };
+        return { ok: true, msg };
       }
       case 'setCar': {
-        if (!d.cars.some((c) => c.id === arg)) return { ok: false, msg: 'Auto desconocido' };
-        d.carId = arg;
+        const car = d.cars.find((c) => c.id === arg);
+        if (arg && !car) return { ok: false, msg: 'Auto desconocido' };
+        d.carId = car ? car.id : null;
         if (s) {
           const today = this.day(Date.now());
-          today[s.carId] = Math.max(0, (today[s.carId] || 0) - s.energy);
-          s.carId = arg;
-          s.base = today[arg] || 0;
-          today[arg] = s.base + s.energy;
+          today[hk(s.carId)] = Math.max(0, (today[hk(s.carId)] || 0) - s.energy);
+          s.carId = d.carId;
+          s.base = today[hk(s.carId)] || 0;
+          today[hk(s.carId)] = s.base + s.energy;
+          if (s.socStart == null && d.carId) s.socStart = d.socByCar[d.carId] ?? null;
         }
-        return { ok: true, msg: 'Auto: ' + d.cars.find((c) => c.id === arg).name };
+        return { ok: true, msg: car ? 'Auto: ' + car.name : 'Sin auto asignado' };
       }
+      case 'saveCar': {
+        const name = String(arg?.name || '').trim().slice(0, 30);
+        if (!name) return { ok: false, msg: 'Poné un nombre para el auto' };
+        const bat = Number(arg.batteryKWh);
+        const batteryKWh = Number.isFinite(bat) && bat > 1 && bat < 300 ? bat : null;
+        let car = d.cars.find((c) => c.id === arg.id);
+        if (car) Object.assign(car, { name, batteryKWh });
+        else {
+          car = { id: 'c' + crypto.randomUUID().slice(0, 8), name, batteryKWh, color: PALETTE[d.cars.length % PALETTE.length] };
+          d.cars.push(car);
+        }
+        return { ok: true, msg: 'Auto guardado', carId: car.id };
+      }
+      case 'deleteCar':
+        d.cars = d.cars.filter((c) => c.id !== arg);
+        d.keys.forEach((k) => { if (k.carId === arg) k.carId = null; });
+        if (d.carId === arg) d.carId = null;
+        return { ok: true, msg: 'Auto borrado' };
       case 'setSoc': {
         const v = Math.min(100, Math.max(0, Number(arg)));
         if (!Number.isFinite(v)) return { ok: false, msg: 'Porcentaje inválido' };
         d.soc = v;
-        if (s) s.socStart = Math.round(v - (s.energy / this.battery(s.carId)) * 100);
-        else d.socByCar[d.carId] = v;
+        const bat = s ? this.battery(s.carId) : null;
+        if (s) s.socStart = bat ? Math.round(v - (s.energy / bat) * 100) : v;
+        else if (d.carId) d.socByCar[d.carId] = v;
         return { ok: true, msg: `Batería corregida a ${Math.round(v)} %` };
       }
       case 'learnKey':
@@ -465,8 +502,8 @@ export class Charger extends DurableObject {
       case 'editKey': {
         const k = d.keys.find((x) => x.id === arg?.id);
         if (!k) return { ok: false, msg: 'Llave no encontrada' };
-        if (arg.name) k.name = String(arg.name).slice(0, 40);
-        if (arg.carId && d.cars.some((c) => c.id === arg.carId)) k.carId = arg.carId;
+        if (arg.name) k.name = String(arg.name).trim().slice(0, 30) || k.name;
+        if ('carId' in arg) k.carId = d.cars.some((c) => c.id === arg.carId) ? arg.carId : null;
         return { ok: true, msg: 'Llave actualizada' };
       }
       case 'deleteKey':
@@ -481,7 +518,7 @@ export class Charger extends DurableObject {
 
   battery(carId) {
     const c = this.d.cars.find((x) => x.id === carId);
-    return (c && c.batteryKWh) || DEFAULT_BATTERY_KWH;
+    return (c && c.batteryKWh) || null;
   }
 
   dayKey(t) {
@@ -519,7 +556,7 @@ export class Charger extends DurableObject {
       history.push({
         label: i === 0 ? 'Hoy' : NAMES[new Date(t + this.tz).getUTCDay()],
         today: i === 0,
-        kwh: Object.fromEntries(d.cars.map((c) => [c.id, v[c.id] || 0])),
+        kwh: Object.fromEntries([...d.cars.map((c) => [c.id, v[c.id] || 0]), [NOCAR, v[NOCAR] || 0]]),
       });
     }
     const s = d.session;
@@ -533,7 +570,7 @@ export class Charger extends DurableObject {
       cars: d.cars,
       carId: d.carId,
       keyId: s && !s.closed ? s.keyId : null,
-      batteryKWh: this.battery(d.carId),
+      batteryKWh: this.battery(s && !s.closed ? s.carId : d.carId),
       limitA: d.schedule.limitA,
       kw: online ? d.kw : 0,
       phases: d.phases,

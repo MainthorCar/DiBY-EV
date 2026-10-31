@@ -89,7 +89,7 @@ export class RemoteSource {
         if (m.event !== 'learned') return;
         this.eventWaits.delete(fn);
         clearTimeout(timer);
-        res({ ok: true, msg: `Llave nueva guardada: ${m.key.name}` });
+        res({ ok: true, msg: 'Llave nueva detectada', keyId: m.key.id });
       };
       const timer = setTimeout(() => { this.eventWaits.delete(fn); res({ ok: false, msg: 'No se detectó ninguna llave' }); }, 62000);
       this.eventWaits.add(fn);

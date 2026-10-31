@@ -55,7 +55,7 @@
             <line id="ringTick" stroke="#fff" stroke-width="3" stroke-linecap="round" filter="url(#glowR)"/>
           </svg>
           <div class="ring-center">
-            <span class="soc mono"><span id="socVal">--</span><small>%</small></span>
+            <span class="soc mono"><span id="socVal">--</span><small id="socUnit">%</small></span>
             <span class="sub" id="socSub">batería estimada</span>
             <span class="sub2">objetivo <b id="targetVal">--</b></span>
           </div>
@@ -106,7 +106,14 @@
       </section>
 
       <section class="card c-prog" data-tab="prog" aria-label="Programar carga">
-        <div class="card-head"><h2>Programar</h2></div>
+        <div class="card-head">
+          <h2>Programar</h2>
+          <label class="switch" title="Activar o desactivar la programación">
+            <span class="switch-txt" id="progOnTxt">Carga libre</span>
+            <input type="checkbox" id="progOn" role="switch">
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+        </div>
         <div class="seg seg3" id="modeSeg">
           <button type="button" data-mode="soc">Porcentaje</button>
           <button type="button" data-mode="time">Tiempo</button>
@@ -204,7 +211,46 @@
 <dialog id="carDialog" aria-labelledby="carDlgTitle">
   <h2 id="carDlgTitle">¿Qué auto está enchufado?</h2>
   <div class="carlist" id="carList"></div>
-  <button type="button" class="btn-ghost wide" id="carClose">Cerrar</button>
+  <div class="dlg-row">
+    <button type="button" class="btn-ghost wide" id="carNew">+ Nuevo auto</button>
+    <button type="button" class="btn-ghost wide" id="carClose">Cerrar</button>
+  </div>
+</dialog>
+
+<dialog id="keyDlg" aria-labelledby="keyDlgTitle">
+  <form id="keyForm" class="form" method="dialog">
+    <h2 id="keyDlgTitle">Llave</h2>
+    <label for="keyNameIn">Nombre de la llave</label>
+    <input id="keyNameIn" maxlength="30" placeholder="Ej.: Tarjeta Gastón" required>
+    <label for="keyCarSel">Auto</label>
+    <select id="keyCarSel"></select>
+    <div class="form-new" id="keyNewCar" hidden>
+      <label for="keyNewCarName">Nombre del auto nuevo</label>
+      <input id="keyNewCarName" maxlength="30" placeholder="Ej.: Jetour de Gastón">
+      <label for="keyNewCarBat">Batería (kWh) <span class="opt-txt">opcional, para calcular el %</span></label>
+      <input id="keyNewCarBat" type="number" inputmode="decimal" min="1" max="300" step="0.1" placeholder="Ej.: 26,7">
+    </div>
+    <div class="dlg-row">
+      <button type="button" class="btn-danger" id="keyDel">Borrar llave</button>
+      <button type="submit" class="btn-primary">Guardar</button>
+    </div>
+    <button type="button" class="btn-ghost wide" id="keyCancel">Cancelar</button>
+  </form>
+</dialog>
+
+<dialog id="carFormDlg" aria-labelledby="carFormTitle">
+  <form id="carForm" class="form" method="dialog">
+    <h2 id="carFormTitle">Auto</h2>
+    <label for="carNameIn">Nombre</label>
+    <input id="carNameIn" maxlength="30" placeholder="Ej.: Dolphin de la oficina" required>
+    <label for="carBatIn">Batería (kWh) <span class="opt-txt">opcional, para calcular el %</span></label>
+    <input id="carBatIn" type="number" inputmode="decimal" min="1" max="300" step="0.1">
+    <div class="dlg-row">
+      <button type="button" class="btn-danger" id="carDel">Borrar auto</button>
+      <button type="submit" class="btn-primary">Guardar</button>
+    </div>
+    <button type="button" class="btn-ghost wide" id="carFormClose">Cancelar</button>
+  </form>
 </dialog>
 
 <dialog id="loginDlg" aria-labelledby="loginTitle">

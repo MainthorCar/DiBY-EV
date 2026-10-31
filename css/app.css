@@ -161,7 +161,7 @@ input[type=range]::-moz-range-thumb{width:20px;height:20px;border:0;border-radiu
 .legend i{width:10px;height:10px;border-radius:3px}
 
 /* Llaves */
-.keylist{display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto}
+.keylist{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));align-content:start;gap:8px;min-height:0;overflow:auto}
 .key{display:grid;grid-template-columns:10px 1fr auto;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:12px}
 .key.active{border-color:rgba(43,255,136,.45);background:rgba(43,255,136,.06)}
 .key .kd{width:10px;height:10px;border-radius:50%}
@@ -299,3 +299,45 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 
 /* Diagnóstico (se abre con ?diag en la dirección) */
 .diag{position:fixed;inset:auto 12px 12px auto;width:min(620px,94vw);max-height:60vh;overflow:auto;background:#000;border:1px solid var(--b);border-radius:12px;padding:12px;font:11px/1.45 var(--mono);color:var(--t2);white-space:pre-wrap;word-break:break-all;z-index:20}
+
+/* Interruptor de Programar */
+.switch{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.switch-txt{font-size:13px;font-weight:600;color:var(--m)}
+.switch input{position:absolute;opacity:0;width:1px;height:1px}
+.switch-track{position:relative;width:46px;height:26px;border-radius:999px;background:#0E1A15;border:1px solid var(--line2);transition:.25s}
+.switch-track::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#55655D;transition:.25s}
+.switch input:checked+.switch-track{background:rgba(43,255,136,.25);border-color:var(--g);box-shadow:0 0 14px rgba(43,255,136,.45)}
+.switch input:checked+.switch-track::after{left:23px;background:#fff;box-shadow:0 0 10px var(--g)}
+.switch input:focus-visible+.switch-track{outline:2px solid var(--b);outline-offset:2px}
+.c-prog:not(.off) .switch-txt{color:var(--g)}
+/* Módulo apagado: sin brillo */
+.c-prog{transition:border-color .3s,box-shadow .3s}
+.c-prog>*:not(.card-head){transition:opacity .3s,filter .3s}
+.c-prog.off{border-color:var(--line)}
+.c-prog.off>*:not(.card-head){opacity:.28;filter:saturate(0) brightness(.8);pointer-events:none}
+.c-prog:not(.off){border-color:rgba(43,255,136,.4);box-shadow:0 0 24px rgba(43,255,136,.08),inset 0 0 20px rgba(43,255,136,.04)}
+
+/* Llaves tocables */
+button.key{width:100%;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;transition:border-color .2s}
+button.key:hover{border-color:var(--line2)}
+.empty{margin:auto 0;text-align:center;font-size:14px;line-height:1.5;color:var(--m)}
+.empty b{color:var(--g)}
+
+/* Ventanas (llave y auto) */
+.form{display:flex;flex-direction:column;gap:8px}
+.form h2{margin-bottom:6px;color:#fff;font-size:15px;letter-spacing:.06em}
+.form label{font-size:13px;color:var(--m);margin-top:4px}
+.form input,.form select{height:44px;border:1px solid var(--line2);border-radius:10px;background:#000;color:#fff;font:inherit;font-size:16px;padding:0 12px;color-scheme:dark}
+.form input:focus,.form select:focus{border-color:var(--g);outline:none;box-shadow:0 0 12px rgba(43,255,136,.3)}
+.form-new{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px dashed var(--line2);border-radius:10px}
+.opt-txt{font-size:11px;color:var(--d)}
+.dlg-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.dlg-row .btn-primary{margin-top:0;height:44px}
+.btn-danger{height:44px;border:1px solid rgba(255,77,109,.5);border-radius:12px;background:transparent;color:#FF8FA3;font-size:14px;font-weight:600}
+.btn-danger[hidden]+.btn-primary{grid-column:1/-1}
+.form>.btn-ghost.wide{margin-top:2px}
+.car-row{display:flex;gap:8px}
+.car-pick{flex:1}
+.car-pick span:last-child{display:flex;flex-direction:column}
+.car-pick small{font-size:11px;color:var(--d)}
+.car-edit{height:46px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:transparent;color:var(--t2);font-size:13px}

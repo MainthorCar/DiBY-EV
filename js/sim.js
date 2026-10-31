@@ -1,5 +1,10 @@
 // Cargador simulado: se comporta como el real para probar la página sin tocar el equipo.
 const DAY = 86400000;
+const DEMO_CARS = [
+  { id: 't1', name: 'Jetour T1 i-DM', color: '#2BFF88', batteryKWh: 26.7 },
+  { id: 'dolphin', name: 'BYD Dolphin', color: '#19C8FF', batteryKWh: 44.9 },
+  { id: 'kangoo', name: 'Kangoo E-Tech', color: '#A9B8FF', batteryKWh: 45 },
+];
 const NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 export class SimSource {
@@ -8,7 +13,7 @@ export class SimSource {
     this.subs = new Set();
     const now = Date.now();
     const start = now - 46 * 60000;
-    const car = cfg.cars[0];
+    const car = DEMO_CARS[0];
 
     const series = [];
     for (let t = start; t <= now; t += 15000) {
@@ -23,17 +28,18 @@ export class SimSource {
       now,
       status: 'Charging',
       reached: false,
-      cars: cfg.cars,
+      cars: DEMO_CARS.map((c) => ({ ...c })),
       carId: car.id,
       keyId: 'k1',
-      batteryKWh: car.batteryKWh || cfg.simBatteryKWh,
+      batteryKWh: car.batteryKWh,
       carMaxKw: 6.62,
       limitA: 32,
       kw: 6.62,
       phases: [{ a: 28.8, v: 230 }, { a: 0, v: 231 }, { a: 0, v: 229 }],
       session: { start, socStart: 43, energy: 5.07, closed: false, carId: car.id, base: 0 },
+      // en la demo la programación arranca apagada (carga libre), igual que en el real
       soc: 62,
-      schedule: { mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
+      schedule: { enabled: false, mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
       meterTotal: 1279.5,
       connector: 'Bloqueado',
       faults: [],
@@ -62,7 +68,7 @@ export class SimSource {
 
   makeHistory(now) {
     const pat = [[0, 12, 0], [6, 0, 18], [7, 14, 0], [0, 0, 22], [8, 11, 0], [5, 0, 15]];
-    const ids = this.cfg.cars.map((c) => c.id);
+    const ids = DEMO_CARS.map((c) => c.id);
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now - i * DAY);
@@ -70,7 +76,7 @@ export class SimSource {
       days.push({
         label: i === 0 ? 'Hoy' : NAMES[d.getDay()],
         today: i === 0,
-        kwh: Object.fromEntries(ids.map((id, j) => [id, v[j] || 0])),
+        kwh: { ...Object.fromEntries(ids.map((id, j) => [id, v[j] || 0])), _: 0 },
       });
     }
     return days;
@@ -79,7 +85,7 @@ export class SimSource {
   targetReached() {
     const s = this.s;
     const sch = s.schedule;
-    if (!s.session) return false;
+    if (!s.session || !sch.enabled) return false;
     if (sch.mode === 'soc') return s.soc >= sch.soc;
     if (sch.mode === 'energy') return s.session.energy >= sch.kwh;
     return (s.now - s.session.start) / 60000 >= sch.minutes;
@@ -115,7 +121,7 @@ export class SimSource {
     }
 
     const today = s.history[s.history.length - 1];
-    if (s.session && !s.session.closed) today.kwh[s.session.carId] = (s.session.base || 0) + s.session.energy;
+    if (s.session && !s.session.closed) today.kwh[s.session.carId || '_'] = (s.session.base || 0) + s.session.energy;
 
     this.emit();
   }
@@ -164,22 +170,50 @@ export class SimSource {
         s.schedule = { ...arg };
         s.limitA = arg.limitA;
         if (s.reached && !this.targetReached()) { s.status = 'Charging'; s.reached = false; }
-        msg = 'Programación guardada';
+        msg = arg.enabled ? 'Programación activada' : 'Carga libre';
         break;
       case 'setCar': {
         const car = s.cars.find((c) => c.id === arg);
-        if (!car) break;
+        if (!car) { s.carId = null; if (s.session) s.session.carId = null; msg = 'Sin auto asignado'; break; }
         s.carId = car.id;
         if (s.session && !s.session.closed) s.session.carId = car.id;
-        s.batteryKWh = car.batteryKWh || this.cfg.simBatteryKWh;
+        s.batteryKWh = car.batteryKWh;
         msg = `Auto: ${car.name}`;
         break;
       }
+      case 'saveCar': {
+        const name = String(arg.name || '').trim();
+        if (!name) return { ok: false, msg: 'Poné un nombre para el auto' };
+        const bat = Number(arg.batteryKWh) > 1 ? Number(arg.batteryKWh) : null;
+        let c = s.cars.find((x) => x.id === arg.id);
+        if (c) Object.assign(c, { name, batteryKWh: bat });
+        else { c = { id: 'c' + Date.now(), name, batteryKWh: bat, color: ['#7DF9FF', '#B6FF3B', '#5B8CFF'][s.cars.length % 3] }; s.cars.push(c); }
+        this.emit();
+        return { ok: true, msg: 'Auto guardado', carId: c.id };
+      }
+      case 'deleteCar':
+        s.cars = s.cars.filter((c) => c.id !== arg);
+        s.keys.forEach((k) => { if (k.carId === arg) k.carId = null; });
+        msg = 'Auto borrado';
+        break;
+      case 'editKey': {
+        const k = s.keys.find((x) => x.id === arg.id);
+        if (!k) return { ok: false, msg: 'Llave no encontrada' };
+        if (arg.name) k.name = arg.name;
+        if ('carId' in arg) k.carId = arg.carId;
+        msg = 'Llave guardada';
+        break;
+      }
+      case 'deleteKey':
+        s.keys = s.keys.filter((x) => x.id !== arg);
+        msg = 'Llave borrada';
+        break;
       case 'learnKey':
         await new Promise((r) => setTimeout(r, 3000));
-        s.keys.push({ id: 'k' + Date.now(), name: `Llave ${s.keys.length + 1}`, carId: s.carId, last: 'recién' });
-        msg = 'Llave nueva guardada';
-        break;
+        const id = 'k' + Date.now();
+        s.keys.push({ id, name: `Llave ${s.keys.length + 1}`, carId: null, last: 'recién' });
+        this.emit();
+        return { ok: true, msg: 'Llave nueva detectada', keyId: id };
       case 'setSoc': {
         const v = Math.min(100, Math.max(0, Number(arg)));
         if (s.session && !s.session.closed) s.session.socStart = Math.round(v - (s.session.energy / s.batteryKWh) * 100);
