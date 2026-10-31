@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rayo neón del ícono: primero el brillo, encima la línea -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M60,26 L38,58 L52,58 L48,82 L70,48 L56,48 Z"
+        android:strokeColor="#552BFF88"
+        android:strokeWidth="9"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M60,26 L38,58 L52,58 L48,82 L70,48 L56,48 Z"
+        android:strokeColor="#2BFF88"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>

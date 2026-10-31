@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+// El número de versión lo pone GitHub en cada compilación (1, 2, 3...)
+def vCode = (project.findProperty('vCode') ?: '1') as Integer
+
+android {
+    namespace 'ar.diby.ev'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ar.diby.ev'
+        minSdk 26
+        targetSdk 34
+        versionCode vCode
+        versionName "1.${vCode}"
+        buildConfigField 'String', 'SITE', '"https://mainthorcar.github.io/DiBY-EV/"'
+        buildConfigField 'String', 'REPO', '"MainthorCar/DiBY-EV"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            // Si existe el secreto KS_B64 en GitHub se usa ese; si no, la firma del repo.
+            storeFile file(System.getenv('KS_FILE') ?: 'diby.jks')
+            storePassword System.getenv('KS_PASS') ?: 'dibyev-2026'
+            keyAlias 'diby'
+            keyPassword System.getenv('KS_PASS') ?: 'dibyev-2026'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
