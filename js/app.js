@@ -1,5 +1,6 @@
 import { CONFIG } from './config.js';
 import { SimSource } from './sim.js';
+import { RemoteSource, getToken, setToken, login } from './remote.js';
 
 const $ = (id) => document.getElementById(id);
 const nf = (n, d = 2) => Number(n).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -22,7 +23,7 @@ const STATUS = {
 };
 
 const app = document.querySelector('.app');
-const source = new SimSource(CONFIG); // Paso 2: si CONFIG.server está cargado, se usa el servidor real.
+let source = null; // simulador o servidor real (ver "Arranque" al final)
 let S = null;
 let range = 'session';
 let form = null;
@@ -111,7 +112,10 @@ function renderTop() {
   const key = S.keys.find((k) => k.id === S.keyId);
   $('keyName').textContent = key && activeSession() ? `· llave «${key.name}»` : '';
   const ago = Math.round((Date.now() - S.lastSeen) / 1000);
-  $('connText').textContent = !S.online ? 'Sin conexión' : ago < 3 ? 'En línea · en vivo' : `En línea · hace ${ago} s`;
+  $('connText').textContent = S.link === 'down' ? 'Sin conexión con el servidor'
+    : !S.online ? 'Cargador desconectado'
+    : S.mode === 'sim' ? 'En línea · en vivo'
+    : ago < 90 ? 'En línea' : `Último dato hace ${Math.round(ago / 60)} min`;
   const cd = $('connDot');
   cd.style.background = S.online ? '#19C8FF' : '#FF4D6D';
   cd.style.color = S.online ? '#19C8FF' : '#FF4D6D';
@@ -276,13 +280,15 @@ function renderKeys() {
 
 function renderEquip() {
   const total = S.meterTotal + (activeSession() ? S.session.energy : 0);
-  const conn = S.mode === 'sim' ? 'Simulación' : 'Ethernet · OCPP 1.6J';
+  const conn = S.mode === 'sim' ? 'Simulación' : `OCPP 1.6J${S.boot && S.boot.fw ? ' · fw ' + S.boot.fw : ''}`;
   const faults = S.faults.length ? S.faults.join(', ') : 'Ninguna';
+  const tag = S.tags && S.tags[0];
   $('equipInfo').innerHTML = `
-    <dt>Conexión</dt><dd>${S.online ? conn : 'Sin conexión'}</dd>
-    <dt>Conector</dt><dd>${S.connector}</dd>
+    <dt>Conexión</dt><dd>${S.online ? esc(conn) : 'Sin conexión'}</dd>
+    <dt>Conector</dt><dd>${esc(S.connector)}</dd>
     <dt>Fallas</dt><dd class="${S.faults.length ? 'bad' : 'ok'}">${esc(faults)}</dd>
     <dt>Medidor total</dt><dd class="mono">${nf(total, 1)} kWh</dd>
+    ${tag ? `<dt>Última llave leída</dt><dd class="mono" title="${esc(tag.tag)}">…${esc(String(tag.tag).slice(-6))} · ${hhmm(tag.t)}</dd>` : ''}
     <dt>Versión</dt><dd class="mono">${CONFIG.version}</dd>`;
   const st = S.status;
   const t = $('btnToggle');
@@ -345,7 +351,7 @@ $('addKey').addEventListener('click', async () => {
   const card = document.querySelector('.c-keys');
   card.classList.add('learning');
   $('addKey').disabled = true;
-  $('keyHint').textContent = 'Apoyá la llave en el cargador…';
+  $('keyHint').textContent = 'Apoyá la llave en el cargador… (tenés 1 minuto)';
   await run('learnKey');
   card.classList.remove('learning');
   $('addKey').disabled = false;
@@ -383,6 +389,7 @@ function toast(msg, err = false) {
 }
 
 async function run(name, arg) {
+  if (!source) return null;
   try {
     const r = await source.command(name, arg);
     if (r && r.msg) toast(r.msg, !r.ok);
@@ -397,12 +404,50 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/* ---------- Corregir el % de batería (tocando el anillo) ---------- */
+
+document.querySelector('.ring-wrap').addEventListener('click', () => {
+  if (!S) return;
+  const v = prompt('¿Qué % de batería marca el auto ahora?', Math.round(S.soc));
+  if (v === null) return;
+  const n = Number(String(v).replace(',', '.'));
+  if (Number.isFinite(n) && n >= 0 && n <= 100) run('setSoc', n);
+});
+
 /* ---------- Arranque ---------- */
 
-source.subscribe((st) => {
-  S = st;
-  if (!form) { form = { ...st.schedule }; renderForm(); }
-  render();
+function start(src) {
+  source = src;
+  source.subscribe((st) => {
+    S = st;
+    if (!form) { form = { ...st.schedule }; renderForm(); }
+    document.querySelector('.c-keys').classList.toggle('learning', !!S.learning || $('addKey').disabled);
+    render();
+  });
+}
+
+function askLogin() {
+  setToken(null);
+  $('loginErr').hidden = true;
+  if (!$('loginDlg').open) $('loginDlg').showModal();
+  $('loginPass').focus();
+}
+
+$('loginDlg').addEventListener('cancel', (e) => e.preventDefault());
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ok = await login(CONFIG.server, $('loginPass').value).catch(() => false);
+  if (!ok) { $('loginErr').hidden = false; return; }
+  $('loginDlg').close();
+  start(new RemoteSource(CONFIG, askLogin));
 });
-if (!CONFIG.server) $('demoTag').hidden = false;
+
+const params = new URLSearchParams(location.search);
+if (params.get('servidor')) CONFIG.server = params.get('servidor').replace(/\/$/, '');
+const demo = !CONFIG.server || params.has('demo');
+$('demoTag').hidden = !demo;
+if (demo) start(new SimSource(CONFIG));
+else if (getToken()) start(new RemoteSource(CONFIG, askLogin));
+else askLogin();
+
 window.addEventListener('resize', () => S && renderChart());

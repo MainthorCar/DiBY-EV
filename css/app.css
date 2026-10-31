@@ -265,3 +265,13 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .tabbar button[aria-current=page] svg{filter:drop-shadow(0 0 5px var(--g))}
   .toast{bottom:80px}
 }
+
+/* Clave de acceso */
+.login{display:flex;flex-direction:column;gap:12px}
+.login .brand-name{font-size:28px;text-align:center;margin-bottom:6px}
+.login label{font-size:14px;color:var(--m)}
+.login input{height:46px;border:1px solid var(--line2);border-radius:10px;background:#000;color:#fff;font:inherit;font-size:16px;padding:0 14px}
+.login input:focus{border-color:var(--g);outline:none;box-shadow:0 0 12px rgba(43,255,136,.3)}
+.login-err{font-size:13px;color:var(--red)}
+.login .btn-primary{margin-top:4px}
+.ring-wrap{cursor:pointer}

@@ -180,6 +180,13 @@ export class SimSource {
         s.keys.push({ id: 'k' + Date.now(), name: `Llave ${s.keys.length + 1}`, carId: s.carId, last: 'recién' });
         msg = 'Llave nueva guardada';
         break;
+      case 'setSoc': {
+        const v = Math.min(100, Math.max(0, Number(arg)));
+        if (s.session && !s.session.closed) s.session.socStart = Math.round(v - (s.session.energy / s.batteryKWh) * 100);
+        s.soc = v;
+        msg = `Batería corregida a ${Math.round(v)} %`;
+        break;
+      }
       default:
         return { ok: false, msg: 'Comando desconocido' };
     }

@@ -207,6 +207,16 @@
   <button type="button" class="btn-ghost wide" id="carClose">Cerrar</button>
 </dialog>
 
+<dialog id="loginDlg" aria-labelledby="loginTitle">
+  <form id="loginForm" class="login">
+    <span class="brand-name">DiBY <em>EV</em></span>
+    <label id="loginTitle" for="loginPass">Clave de acceso</label>
+    <input id="loginPass" type="password" autocomplete="current-password" required>
+    <span class="login-err" id="loginErr" hidden>Clave incorrecta</span>
+    <button type="submit" class="btn-primary">Entrar</button>
+  </form>
+</dialog>
+
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
