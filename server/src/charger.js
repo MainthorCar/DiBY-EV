@@ -29,13 +29,14 @@ function defaults() {
     paused: false,
     carId: null,
     cars: [],
-    tariff: 150,
+    tariff: null,
+    tariffSince: null,
     schedule: { enabled: false, mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
     keys: [],
     tags: [],
     learning: 0,
     history: {},
-    v: 2,
+    v: 3,
   };
 }
 
@@ -46,13 +47,19 @@ export class Charger extends DurableObject {
     this.pending = new Map();
     this.tz = Number(env.TZ_OFFSET_MIN || -180) * 60000;
     ctx.blockConcurrencyWhile(async () => {
-      this.d = { ...defaults(), ...((await ctx.storage.get('d')) || {}) };
-      if ((this.d.v || 1) < 2) {
+      const stored = (await ctx.storage.get('d')) || null;
+      this.d = { ...defaults(), ...(stored || {}) };
+      if (stored && (stored.v || 1) < 2) {
         // v2: sin autos de ejemplo; cada usuario crea los suyos. Carga libre por defecto.
         const fresh = defaults();
         Object.assign(this.d, { cars: [], carId: null, soc: null, socByCar: {}, history: {}, schedule: fresh.schedule, v: 2 });
         this.d.keys = (this.d.keys || []).map((k) => ({ ...k, carId: null }));
         if (this.d.session) this.d.session.carId = null;
+      }
+      if (stored && (stored.v || 1) < 3) {
+        // v3: precio del kWh lo carga el usuario en Ajustes
+        this.d.tariff = null;
+        this.d.v = 3;
       }
       this.series = (await ctx.storage.get('series')) || [];
     });
@@ -173,10 +180,14 @@ export class Charger extends DurableObject {
         const key = d.keys.find((k) => k.tag === p.idTag);
         d.carId = key ? key.carId || null : p.idTag === PANEL_TAG ? d.carId : null;
         const socStart = d.carId ? d.socByCar[d.carId] ?? null : null;
+        const start = Date.parse(p.timestamp) || now;
+        const day = this.day(start);
+        const h = hk(d.carId);
+        day['#' + h] = (day['#' + h] || 0) + 1;
         d.session = {
-          tx, start: Date.parse(p.timestamp) || now, meterStart: p.meterStart || 0, energy: 0,
+          tx, start, meterStart: p.meterStart || 0, energy: 0,
           socStart, carId: d.carId, keyId: key ? key.id : null, idTag: p.idTag, closed: false,
-          base: (this.day(now)[hk(d.carId)] || 0),
+          day: this.dayKey(start), base: day[h] || 0, costBase: day['$' + h] || 0, tariff: d.tariff,
         };
         d.soc = socStart;
         d.reached = false;
@@ -197,7 +208,7 @@ export class Charger extends DurableObject {
           if (typeof p.meterStop === 'number') s.energy = Math.max(0, (p.meterStop - s.meterStart) / 1000);
           s.closed = true;
           s.end = Date.parse(p.timestamp) || now;
-          this.day(now)[hk(s.carId)] = s.base + s.energy;
+          this.book(s);
           if (s.carId && d.soc != null) d.socByCar[s.carId] = Math.round(d.soc);
           if (typeof p.meterStop === 'number') d.meterTotal = p.meterStop / 1000;
           d.kw = 0;
@@ -264,7 +275,7 @@ export class Charger extends DurableObject {
       d.soc = socMeas !== null ? socMeas
         : s.socStart != null && bat ? Math.min(100, s.socStart + (s.energy / bat) * 100)
         : s.socStart != null ? s.socStart : null;
-      this.day(Date.now())[hk(s.carId)] = s.base + s.energy;
+      this.book(s);
       const now = Date.now();
       const last = this.series[this.series.length - 1];
       if (!last || now - last.t >= 5000) {
@@ -460,11 +471,19 @@ export class Charger extends DurableObject {
         if (arg && !car) return { ok: false, msg: 'Auto desconocido' };
         d.carId = car ? car.id : null;
         if (s) {
-          const today = this.day(Date.now());
-          today[hk(s.carId)] = Math.max(0, (today[hk(s.carId)] || 0) - s.energy);
+          const day = this.d.history[s.day || this.dayKey(s.start)] || this.day(s.start);
+          const from = hk(s.carId), to = hk(d.carId);
+          if (from !== to) {
+            const cost = s.tariff != null ? s.energy * s.tariff : 0;
+            day[from] = Math.max(0, (day[from] || 0) - s.energy);
+            if (day['$' + from] != null) day['$' + from] = Math.max(0, day['$' + from] - cost);
+            day['#' + from] = Math.max(0, (day['#' + from] || 0) - 1);
+            day['#' + to] = (day['#' + to] || 0) + 1;
+            s.base = day[to] || 0;
+            s.costBase = day['$' + to] || 0;
+          }
           s.carId = d.carId;
-          s.base = today[hk(s.carId)] || 0;
-          today[hk(s.carId)] = s.base + s.energy;
+          this.book(s);
           if (s.socStart == null && d.carId) s.socStart = d.socByCar[d.carId] ?? null;
         }
         return { ok: true, msg: car ? 'Auto: ' + car.name : 'Sin auto asignado' };
@@ -496,6 +515,14 @@ export class Charger extends DurableObject {
         else if (d.carId) d.socByCar[d.carId] = v;
         return { ok: true, msg: `Batería corregida a ${Math.round(v)} %` };
       }
+      case 'setTariff': {
+        const v = Number(String(arg).replace(',', '.'));
+        if (!Number.isFinite(v) || v < 0 || v > 1e6) return { ok: false, msg: 'Precio inválido' };
+        d.tariff = v;
+        d.tariffSince = Date.now();
+        if (s) { s.tariff = v; this.book(s); }
+        return { ok: true, msg: 'Precio guardado' };
+      }
       case 'learnKey':
         d.learning = Date.now() + 60000;
         return { ok: true, msg: 'Apoyá la llave en el cargador', learning: true };
@@ -521,6 +548,14 @@ export class Charger extends DurableObject {
     return (c && c.batteryKWh) || null;
   }
 
+  // Anota la energía y el costo de la sesión en el día en que empezó
+  book(s) {
+    const day = this.d.history[s.day || this.dayKey(s.start)] || this.day(s.start);
+    const h = hk(s.carId);
+    day[h] = (s.base || 0) + s.energy;
+    if (s.tariff != null) day['$' + h] = (s.costBase || 0) + s.energy * s.tariff;
+  }
+
   dayKey(t) {
     return new Date(t + this.tz).toISOString().slice(0, 10);
   }
@@ -530,7 +565,7 @@ export class Charger extends DurableObject {
     if (!this.d.history[k]) {
       this.d.history[k] = {};
       const keys = Object.keys(this.d.history).sort();
-      for (const old of keys.slice(0, Math.max(0, keys.length - 120))) delete this.d.history[old];
+      for (const old of keys.slice(0, Math.max(0, keys.length - 800))) delete this.d.history[old];
     }
     return this.d.history[k];
   }
@@ -574,13 +609,15 @@ export class Charger extends DurableObject {
       limitA: d.schedule.limitA,
       kw: online ? d.kw : 0,
       phases: d.phases,
-      session: s ? { start: s.start, end: s.end, socStart: s.socStart, energy: s.energy, closed: s.closed, carId: s.carId } : null,
+      session: s ? { start: s.start, end: s.end, socStart: s.socStart, energy: s.energy, closed: s.closed, carId: s.carId, tariff: s.tariff ?? null } : null,
       soc: d.soc,
       schedule: d.schedule,
       meterTotal: d.meterTotal - (s && !s.closed ? s.energy : 0),
       connector: d.connector,
       faults: d.faults,
       tariff: d.tariff,
+      tariffSince: d.tariffSince,
+      days: d.history,
       series: this.series,
       keys: d.keys.map((k) => ({ id: k.id, name: k.name, carId: k.carId, last: this.lastLabel(k.lastT) })),
       tags: d.tags.slice(0, 3),

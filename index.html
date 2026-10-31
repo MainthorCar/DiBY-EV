@@ -29,6 +29,9 @@
     <div class="status">
       <span class="conn"><span class="dot breathe" id="connDot"></span><span id="connText">Conectando…</span></span>
       <span class="clock mono" id="clock">--:--</span>
+      <button type="button" class="icon-btn" id="btnSettings" aria-label="Ajustes" title="Ajustes">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
     </div>
   </header>
 
@@ -170,7 +173,21 @@
 
     <div class="row row-bottom">
       <section class="card blue c-hist" data-tab="hist" aria-label="Historial">
-        <div class="card-head"><h2>Últimos 7 días</h2><span class="mono total" id="weekTotal">—</span></div>
+        <div class="card-head">
+          <h2 id="histTitle">Últimos 7 días</h2>
+          <div class="seg" id="histSeg">
+            <button type="button" data-h="week" aria-pressed="true">Semana</button>
+            <button type="button" data-h="month" aria-pressed="false">Mes</button>
+          </div>
+        </div>
+        <div class="hist-sub">
+          <div class="month-nav" id="monthNav">
+            <button type="button" id="mPrev" aria-label="Mes anterior">‹</button>
+            <span id="mLabel">—</span>
+            <button type="button" id="mNext" aria-label="Mes siguiente">›</button>
+          </div>
+          <span class="hist-tot"><span class="mono total" id="weekTotal">—</span><span class="mono money" id="histMoney"></span></span>
+        </div>
         <div class="bars" id="bars"></div>
         <div class="legend" id="legend"></div>
       </section>
@@ -205,6 +222,23 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12 L20 3"/><path d="M17 6 L20 9"/></svg>Llaves</button>
   </nav>
 </div>
+
+<section class="settings" id="settings" hidden aria-labelledby="setTitle">
+  <header class="set-top">
+    <button type="button" class="btn-ghost back" id="setBack">‹ Volver</button>
+    <h1 id="setTitle">Ajustes</h1>
+  </header>
+  <div class="set-grid">
+    <section class="card set-card" aria-labelledby="tariffTitle">
+      <h2 id="tariffTitle">Precio del kWh</h2>
+      <p class="note">Se usa para calcular cuánto cuesta cada carga y el total de cada mes. Cada carga guarda el precio que tenía ese día: si lo cambiás, los meses anteriores no se modifican.</p>
+      <label for="tariffIn" class="lbl">Pesos por kWh</label>
+      <div class="money-in"><span>$</span><input id="tariffIn" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Ej.: 150"></div>
+      <span class="note" id="tariffSince"></span>
+      <button type="button" class="btn-primary" id="tariffSave">Guardar precio</button>
+    </section>
+  </div>
+</section>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

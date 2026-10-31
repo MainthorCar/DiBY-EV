@@ -36,7 +36,7 @@ export class SimSource {
       limitA: 32,
       kw: 6.62,
       phases: [{ a: 28.8, v: 230 }, { a: 0, v: 231 }, { a: 0, v: 229 }],
-      session: { start, socStart: 43, energy: 5.07, closed: false, carId: car.id, base: 0 },
+      session: { start, socStart: 43, energy: 5.07, closed: false, carId: car.id, base: 0, costBase: 0, tariff: cfg.tariff, day: dkey(new Date(start)) },
       // en la demo la programación arranca apagada (carga libre), igual que en el real
       soc: 62,
       schedule: { enabled: false, mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
@@ -50,7 +50,8 @@ export class SimSource {
         { id: 'k2', name: 'Tarjeta azul', carId: 'dolphin', last: 'jueves' },
         { id: 'k3', name: 'Llavero', carId: 'kangoo', last: 'viernes' },
       ],
-      history: this.makeHistory(now),
+      days: this.makeDays(now),
+      tariffSince: now - 20 * DAY,
     };
     this.lastPush = now;
     setInterval(() => this.tick(), 1000);
@@ -66,19 +67,21 @@ export class SimSource {
     for (const fn of this.subs) fn(this.s);
   }
 
-  makeHistory(now) {
-    const pat = [[0, 12, 0], [6, 0, 18], [7, 14, 0], [0, 0, 22], [8, 11, 0], [5, 0, 15]];
+  makeDays(now) {
+    const days = {};
     const ids = DEMO_CARS.map((c) => c.id);
-    const days = [];
-    for (let i = 6; i >= 0; i--) {
+    for (let i = 60; i >= 1; i--) {
       const d = new Date(now - i * DAY);
-      const v = i === 0 ? [0, 0, 0] : pat[(6 - i) % pat.length];
-      days.push({
-        label: i === 0 ? 'Hoy' : NAMES[d.getDay()],
-        today: i === 0,
-        kwh: { ...Object.fromEntries(ids.map((id, j) => [id, v[j] || 0])), _: 0 },
+      const v = {};
+      ids.forEach((id, j) => {
+        if ((i * 7 + j * 3) % 5 < 2) {
+          const k = 6 + ((i * 13 + j * 7) % 17);
+          v[id] = k; v['$' + id] = k * this.cfg.tariff; v['#' + id] = 1;
+        }
       });
+      days[dkey(d)] = v;
     }
+    days[dkey(new Date(now))] = { t1: 0, '#t1': 1 };
     return days;
   }
 
@@ -120,8 +123,12 @@ export class SimSource {
       if (s.series.length > 4000) s.series.shift();
     }
 
-    const today = s.history[s.history.length - 1];
-    if (s.session && !s.session.closed) today.kwh[s.session.carId || '_'] = (s.session.base || 0) + s.session.energy;
+    if (s.session && !s.session.closed) {
+      const se = s.session, h = se.carId || '_';
+      const day = s.days[se.day] || (s.days[se.day] = {});
+      day[h] = (se.base || 0) + se.energy;
+      if (se.tariff != null) day['$' + h] = (se.costBase || 0) + se.energy * se.tariff;
+    }
 
     this.emit();
   }
@@ -136,7 +143,10 @@ export class SimSource {
         } else if (s.status === 'SuspendedEVSE' || s.status === 'SuspendedEV') {
           s.status = 'Charging'; s.reached = false; msg = 'Carga reanudada';
         } else if (['Preparing', 'Finishing', 'Available'].includes(s.status)) {
-          s.session = { start: Date.now(), socStart: Math.round(s.soc), energy: 0, closed: false, carId: s.carId, base: s.history[s.history.length - 1].kwh[s.carId] || 0 };
+          const k = dkey(new Date()), h = s.carId || '_';
+          const day = s.days[k] || (s.days[k] = {});
+          day['#' + h] = (day['#' + h] || 0) + 1;
+          s.session = { start: Date.now(), socStart: Math.round(s.soc), energy: 0, closed: false, carId: s.carId, base: day[h] || 0, costBase: day['$' + h] || 0, tariff: s.tariff, day: k };
           s.series = [{ t: Date.now(), kw: 0 }];
           s.status = 'Charging'; s.reached = false; msg = 'Carga iniciada';
         }
@@ -191,6 +201,12 @@ export class SimSource {
         this.emit();
         return { ok: true, msg: 'Auto guardado', carId: c.id };
       }
+      case 'setTariff':
+        s.tariff = Number(arg);
+        s.tariffSince = Date.now();
+        if (s.session && !s.session.closed) s.session.tariff = s.tariff;
+        msg = 'Precio guardado';
+        break;
       case 'deleteCar':
         s.cars = s.cars.filter((c) => c.id !== arg);
         s.keys.forEach((k) => { if (k.carId === arg) k.carId = null; });
@@ -227,6 +243,10 @@ export class SimSource {
     this.emit();
     return { ok: true, msg };
   }
+}
+
+function dkey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function wobble(t) {
