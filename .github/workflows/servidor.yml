@@ -6,11 +6,23 @@ on:
     paths: ['server/**', '.github/workflows/servidor.yml']
   workflow_dispatch:
 
+concurrency:
+  group: servidor
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Esperar a que no haya una carga en curso
+        env:
+          PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
+        run: node tools/esperar-sin-carga.mjs
       - name: Publicar en Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:

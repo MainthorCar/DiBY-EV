@@ -220,6 +220,9 @@ export class Charger extends DurableObject {
       }
 
       case 'DataTransfer':
+        // Se guarda todo lo que mande el cargador sobre el auto, para ver si trae el %
+        d.evInfo = [{ t: now, p }, ...(d.evInfo || [])].slice(0, 15);
+        this.readSocFrom(p);
         return { status: 'Accepted' };
 
       default: // FirmwareStatusNotification, DiagnosticsStatusNotification, etc.
@@ -246,6 +249,32 @@ export class Charger extends DurableObject {
     return 'Accepted';
   }
 
+  // Busca un % de batería en cualquier dato que mande el cargador
+  readSocFrom(p) {
+    let raw = p && p.data;
+    try { if (typeof raw === 'string') raw = JSON.parse(raw); } catch {}
+    const find = (o) => {
+      if (!o || typeof o !== 'object') return null;
+      for (const [k, v] of Object.entries(o)) {
+        if (/^(soc|stateofcharge|batterylevel|battery_level|ev_soc)$/i.test(k) && Number.isFinite(Number(v))) return Number(v);
+        const r = find(v);
+        if (r != null) return r;
+      }
+      return null;
+    };
+    const v = find(raw);
+    if (v != null && v >= 0 && v <= 100) this.setRealSoc(v, 'DataTransfer');
+  }
+
+  setRealSoc(v, src) {
+    const d = this.d;
+    d.socReal = { v, src, t: Date.now() };
+    d.soc = v;
+    const s = d.session;
+    if (s && !s.closed) { s.socReal = true; if (s.socStart == null) s.socStart = Math.round(v); }
+    this.checkTarget();
+  }
+
   readMeter(p) {
     const d = this.d;
     const s = d.session;
@@ -263,7 +292,7 @@ export class Charger extends DurableObject {
         else if (meas === 'Power.Active.Import') { if (unit === 'kw') v *= 1000; if (i < 0) power = v; else phPow[i] = v; }
         else if (meas === 'Current.Import') { if (i >= 0) cur[i] = v; else if (cur[0] === null) cur[0] = v; }
         else if (meas === 'Voltage') { if (i >= 0) volt[i] = v; }
-        else if (meas === 'SoC') socMeas = v;
+        else if (meas === 'SoC') { socMeas = v; this.d.socSeen = { t: Date.now(), v, raw: sv }; }
       }
     }
     if (power === null && phPow.some((x) => x !== null)) power = phPow.reduce((a, b) => a + (b || 0), 0);
@@ -276,7 +305,9 @@ export class Charger extends DurableObject {
     if (s && !s.closed && (!p.transactionId || p.transactionId === s.tx)) {
       if (reg !== null) s.energy = Math.max(0, (reg - s.meterStart) / 1000);
       const bat = this.battery(s.carId);
-      d.soc = socMeas !== null ? socMeas
+      if (socMeas !== null) { this.setRealSoc(socMeas, 'MeterValues'); }
+      else if (s.socReal) { /* se mantiene el último % real */ }
+      else d.soc = socMeas !== null ? socMeas
         : s.socStart != null && bat ? Math.min(100, s.socStart + (s.energy / bat) * 100)
         : s.socStart != null ? s.socStart : null;
       this.book(s);
@@ -329,9 +360,13 @@ export class Charger extends DurableObject {
       const r = await this.call('ChangeConfiguration', { key, value }).catch((e) => ({ status: 'Error: ' + e.message }));
       results[key] = r.status;
     };
-    // Mientras carga: cada 10 s
+    // Mientras carga: cada 10 s. Primero se pide también el % de batería (SoC); si el cargador no lo acepta, sin él.
     await set('MeterValueSampleInterval', '10');
-    await set('MeterValuesSampledData', MEAS);
+    await set('MeterValuesSampledData', MEAS + ',SoC');
+    results.socPedido = results.MeterValuesSampledData;
+    if (results.MeterValuesSampledData !== 'Accepted') await set('MeterValuesSampledData', MEAS);
+    // Información del auto que el cargador manda por DataTransfer (la usan otras plataformas)
+    await set('EvPresenceNotification', 'true');
     // Siempre (aunque no cargue): cada 15 s, para ver voltaje y fases con el cargador encendido
     await set('ClockAlignedDataInterval', '15');
     await set('MeterValuesAlignedData', MEAS);
@@ -654,7 +689,8 @@ export class Charger extends DurableObject {
       boot: d.boot,
       chargerId: d.chargerId,
       attempts: d.attempts || [],
-      diag: { cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [] },
+      diag: { cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [], evInfo: d.evInfo || [], socSeen: d.socSeen || null, socReal: d.socReal || null },
+      socReal: !!(s && !s.closed && s.socReal),
       history,
     };
   }
@@ -671,8 +707,8 @@ export class Charger extends DurableObject {
 
   logMsg(dir, raw) {
     this.log = this.log || [];
-    this.log.unshift({ t: Date.now(), dir, m: String(raw).slice(0, 400) });
-    if (this.log.length > 20) this.log.length = 20;
+    this.log.unshift({ t: Date.now(), dir, m: String(raw).slice(0, 4000) });
+    if (this.log.length > 40) this.log.length = 40;
   }
 
   async save() {
