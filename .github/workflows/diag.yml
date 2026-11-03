@@ -1,0 +1,34 @@
+name: Diagnóstico del cargador
+
+on:
+  push:
+    branches: [diag]
+    paths: ['diag/run.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  capturar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Escuchar al cargador (solo lectura)
+        env:
+          PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
+          MINUTES: '5'
+        run: node diag/collect.mjs
+      - name: Cifrar y guardar
+        run: |
+          openssl rand -out k.bin 32
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in diag/datos.json -out diag/datos.enc -pass file:k.bin
+          openssl pkeyutl -encrypt -pubin -inkey diag/pub.pem -in k.bin -out diag/clave.enc
+          rm -f k.bin diag/datos.json
+          git config user.name "DiBY diag"
+          git config user.email "diag@users.noreply.github.com"
+          git add diag/datos.enc diag/clave.enc
+          git commit -m "Diagnóstico cifrado $(date -u +%FT%TZ)"
+          git push
