@@ -33,6 +33,8 @@ setTimeout(() => {
     minutos: MINUTES,
     configuracionDelCargador: first?.diag?.cfg || [],
     ajustesPedidos: first?.diag?.cfgSet || {},
+    infoAuto: first?.diag?.evInfo || [],
+    socVisto: first?.diag?.socSeen || null,
     boot: first?.boot || null,
     mensajes: [...msgs.values()].sort((a, b) => a.t - b.t).map((l) => ({ hora: new Date(l.t).toISOString(), dir: l.dir, m: l.m })),
     estados: states.filter((_, i) => i % 3 === 0),
