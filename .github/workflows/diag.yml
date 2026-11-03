@@ -19,7 +19,7 @@ jobs:
       - name: Escuchar al cargador (solo lectura)
         env:
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
-          MINUTES: '1'
+          MINUTES: '4'
         run: node diag/collect.mjs
       - name: Cifrar y guardar
         run: |
