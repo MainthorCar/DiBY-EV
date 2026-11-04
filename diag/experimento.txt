@@ -1,0 +1,111 @@
+Cargador: en línea | estado: Available
+Activar ISO 15118 → RebootRequired
+Pedir % (SoC) con ISO 15118 activo → Rejected
+Volver a los datos normales → Accepted
+--- Datos que acepta informar (probados de a uno) ---
+   SoC                                → Rejected
+   Current.Offered                    → Accepted
+   Power.Offered                      → Accepted
+   Frequency                          → Accepted
+   Temperature                        → Rejected
+   Power.Factor                       → Rejected
+   Current.Export                     → Rejected
+   Energy.Active.Export.Register      → Rejected
+   Energy.Reactive.Import.Register    → Accepted
+   Power.Reactive.Import              → Rejected
+   Energy.Active.Import.Interval      → Rejected
+   Power.Active.Export                → Rejected
+   RPM                                → Rejected
+Datos cada 15 s → Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage,Current.Offered,Power.Offered,Frequency,Energy.Reactive.Import.Register → Accepted
+Datos durante la carga → Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage,Current.Offered,Power.Offered,Frequency,Energy.Reactive.Import.Register → Accepted
+--- Todos los ajustes del cargador ---
+   [fijo]      AdditionalRootCertificateCheck = false
+   [cambiable] AllowOfflineTxForUnknownId = false
+   [cambiable] AuthenticationOCPPMode = true
+   [cambiable] AuthorizationCacheEnabled = false
+   [cambiable] AuthorizeRemoteTxRequests = true
+   [cambiable] AutoChargeEnabled = false
+   [cambiable] BoxIdentifier = B25182020126
+   [cambiable] CentralContractValidationAllowed = false
+   [cambiable] CertSigningRepeatTimes = 1
+   [cambiable] CertSigningWaitMinimum = 2
+   [fijo]      CertificateSignedMaxChainSize = 10000
+   [fijo]      CertificateStoreMaxLength = 10
+   [fijo]      ChargeProfileMaxStackLevel = 999
+   [fijo]      ChargingScheduleAllowedChargingRateUnit = Current
+   [fijo]      ChargingScheduleMaxPeriods = 50
+   [cambiable] ClockAlignedDataInterval = 15
+   [cambiable] ConnectionTimeOut = 60
+   [cambiable] ConnectorPhaseRotation = 0.RST, 1.RST, 2.RST
+   [fijo]      ConnectorPhaseRotationMaxLength = 3
+   [fijo]      ConnectorSwitch3to1PhaseSupported = false
+   [cambiable] ContractValidationOffline = false
+   [cambiable] CpoName = 
+   [cambiable] DefaultIdTag = 18237379292
+   [cambiable] DhcpEnabled = true
+   [cambiable] DnsAddress1 = 
+   [cambiable] DnsAddress2 = 
+   [cambiable] EnableDoubleNotification = false
+   [cambiable] EvPresenceNotification = true
+   [fijo]      GetConfigurationMaxKeys = 100
+   [cambiable] HeartbeatInterval = 60
+   [fijo]      IMaxEvseCapacityTE = 10
+   [cambiable] ISO15118ChargeEnabled = true
+   [fijo]      ISO15118PnCEnabled = false
+   [cambiable] IpAddress = 192.168.1.43
+   [cambiable] LedDayEndHour = 20:00
+   [cambiable] LedDayStartHour = 08:00
+   [cambiable] LedNightIntensity = 40
+   [cambiable] LightIntensity = 80
+   [cambiable] LocalAuthListEnabled = false
+   [fijo]      LocalAuthListMaxLength = 300
+   [cambiable] LocalAuthorizeOffline = true
+   [cambiable] LocalPreAuthorize = false
+   [cambiable] MacAddressPrefix = VID:
+   [fijo]      MaxChargingProfilesInstalled = 99
+   [fijo]      MeterMID = false
+   [cambiable] MeterValueSampleInterval = 10
+   [cambiable] MeterValuesAlignedData = Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage,Current.Offered,Power.Offered,Frequency,Energy.Reactive.Import.Register
+   [fijo]      MeterValuesAlignedDataMaxLength = 10
+   [cambiable] MeterValuesSampledData = Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage,Current.Offered,Power.Offered,Frequency,Energy.Reactive.Import.Register
+   [fijo]      MeterValuesSampledDataMaxLength = 10
+   [cambiable] MinimumStatusDuration = 5
+   [cambiable] ModbusEnable = false
+   [cambiable] NetworkGateway = 192.168.1.1
+   [cambiable] NetworkSubmask = 255.255.255.0
+   [fijo]      NumberOfConnectors = 1
+   [cambiable] OcppEnable = true
+   [cambiable] PauseMeterValuesWhenSuspended = false
+   [cambiable] PhasesConnection = 1
+   [cambiable] PlugNumberingMode = 1
+   [cambiable] ResendBootNotificationInterval = 40
+   [fijo]      ReserveConnectorZeroSupported = true
+   [cambiable] ResetRetries = 3
+   [cambiable] RestoreTimeout = 600
+   [cambiable] SeccLeafSubjectCommonName = ZZ00000
+   [cambiable] SeccLeafSubjectCountry = FR
+   [cambiable] SeccLeafSubjectOrganization = Schneider Electric
+   [cambiable] SecurityEventsEnabled = true
+   [cambiable] SecurityProfile = 0
+   [cambiable] SelfSignedCertificateAuthorized = false
+   [fijo]      SendLocalListMaxLength = 100
+   [cambiable] StationName = EV mehaudy
+   [fijo]      StopTransactionOnEVSideDisconnect = true
+   [cambiable] StopTransactionOnInvalidId = true
+   [cambiable] StopTxnAlignedData = 
+   [fijo]      StopTxnAlignedDataMaxLength = 5
+   [fijo]      StopTxnMaximaleData = 1440
+   [cambiable] StopTxnMinimumDurationData = 60
+   [cambiable] StopTxnSampledData = 
+   [fijo]      StopTxnSampledDataMaxLength = 5
+   [cambiable] SupervisionUrl = wss://diby-ev.mainthorcar.workers.dev/ocpp
+   [fijo]      SupportedFeatureProfiles = Core, FirmwareManagement, Reservation, SmartCharging, RemoteTrigger, LocalAuthListManagement
+   [fijo]      SupportedFeatureProfilesMaxLength = 6
+   [cambiable] TransactionMessageAttempts = 0
+   [cambiable] TransactionMessageRetryInterval = 0
+   [fijo]      UnlockConnectorOnEVSideDisconnect = true
+   [cambiable] WebSocketPingInterval = 30
+   [cambiable] WebsocketConnectionTimeout = 5
+   [cambiable] WebsocketRequestTimeout = 10
+   [cambiable] compressdiagnostic = true
+   [cambiable] iMaxDeratingSwCapacity = 32
