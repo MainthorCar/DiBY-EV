@@ -229,6 +229,11 @@
     <h1 id="setTitle">Ajustes</h1>
   </header>
   <div class="set-grid">
+    <section class="card set-card" aria-labelledby="carsTitle">
+      <div class="card-head"><h2 id="carsTitle">Mis autos</h2><button type="button" class="btn-ghost" id="setCarAdd">+ Agregar auto</button></div>
+      <p class="note">Con la batería de cada auto, DiBY EV estima el %. Cada vez que un auto termina lleno, aprende y ajusta el cálculo para ese auto.</p>
+      <div class="set-cars" id="setCars"></div>
+    </section>
     <section class="card set-card" aria-labelledby="tariffTitle">
       <h2 id="tariffTitle">Precio del kWh</h2>
       <p class="note">Se usa para calcular cuánto cuesta cada carga y el total de cada mes. Cada carga guarda el precio que tenía ese día: si lo cambiás, los meses anteriores no se modifican.</p>
@@ -263,6 +268,8 @@
       <input id="keyNewCarName" maxlength="30" placeholder="Ej.: Jetour de Gastón">
       <label for="keyNewCarBat">Batería (kWh) <span class="opt-txt">opcional, para calcular el %</span></label>
       <input id="keyNewCarBat" type="number" inputmode="decimal" min="1" max="300" step="0.1" placeholder="Ej.: 26,7">
+      <label for="keyNewCarChem">Tipo de batería</label>
+    <select id="keyNewCarChem"><option value="LFP">LFP (litio-ferrofosfato)</option><option value="NMC">NMC (níquel-manganeso-cobalto)</option></select>
     </div>
     <div class="dlg-row">
       <button type="button" class="btn-danger" id="keyDel">Borrar llave</button>
@@ -277,14 +284,27 @@
     <h2 id="carFormTitle">Auto</h2>
     <label for="carNameIn">Nombre</label>
     <input id="carNameIn" maxlength="30" placeholder="Ej.: Dolphin de la oficina" required>
-    <label for="carBatIn">Batería (kWh) <span class="opt-txt">opcional, para calcular el %</span></label>
-    <input id="carBatIn" type="number" inputmode="decimal" min="1" max="300" step="0.1">
+    <label for="carBatIn">Batería útil (kWh) <span class="opt-txt">para calcular el %</span></label>
+    <input id="carBatIn" type="number" inputmode="decimal" min="1" max="300" step="0.1" placeholder="Ej.: 45">
+    <label for="carChemIn">Tipo de batería</label>
+    <select id="carChemIn"><option value="LFP">LFP (litio-ferrofosfato)</option><option value="NMC">NMC (níquel-manganeso-cobalto)</option></select>
+    <p class="note" id="carLearn"></p>
     <div class="dlg-row">
       <button type="button" class="btn-danger" id="carDel">Borrar auto</button>
       <button type="submit" class="btn-primary">Guardar</button>
     </div>
     <button type="button" class="btn-ghost wide" id="carFormClose">Cancelar</button>
   </form>
+</dialog>
+
+<dialog id="socDlg" aria-labelledby="socDlgTitle">
+  <div class="form">
+    <h2 id="socDlgTitle">¿Con qué % llegó?</h2>
+    <p class="note" id="socDlgCar"></p>
+    <div class="soc-grid" id="socGrid"></div>
+    <div class="soc-other"><input id="socOther" type="number" inputmode="numeric" min="0" max="100" placeholder="Otro %" aria-label="Otro porcentaje"><button type="button" class="btn-primary" id="socOtherOk">OK</button></div>
+    <button type="button" class="btn-ghost wide" id="socSkip">No sé · mostrar solo lo cargado</button>
+  </div>
 </dialog>
 
 <dialog id="loginDlg" aria-labelledby="loginTitle">

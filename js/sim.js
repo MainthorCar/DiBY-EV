@@ -1,9 +1,9 @@
 // Cargador simulado: se comporta como el real para probar la página sin tocar el equipo.
 const DAY = 86400000;
 const DEMO_CARS = [
-  { id: 't1', name: 'Jetour T1 i-DM', color: '#2BFF88', batteryKWh: 26.7 },
+  { id: 't1', name: 'Jetour T1 i-DM', color: '#2BFF88', batteryKWh: 26.7, chem: 'LFP', learn: { n: 3, eff: 0.91 } },
   { id: 'dolphin', name: 'BYD Dolphin', color: '#19C8FF', batteryKWh: 44.9 },
-  { id: 'kangoo', name: 'Kangoo E-Tech', color: '#A9B8FF', batteryKWh: 45 },
+  { id: 'kangoo', name: 'Kangoo E-Tech', color: '#A9B8FF', batteryKWh: 45, chem: 'NMC' },
 ];
 const NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
@@ -36,7 +36,7 @@ export class SimSource {
       limitA: 32,
       kw: 6.62,
       phases: [{ a: 28.8, v: 230 }, { a: 0, v: 231 }, { a: 0, v: 229 }],
-      session: { start, socStart: 43, energy: 5.07, closed: false, carId: car.id, base: 0, costBase: 0, tariff: cfg.tariff, day: dkey(new Date(start)) },
+      session: { start, socStart: new URLSearchParams(location.search).has('sinllegada') ? null : 43, energy: 5.07, closed: false, carId: car.id, base: 0, costBase: 0, tariff: cfg.tariff, day: dkey(new Date(start)) },
       // en la demo la programación arranca apagada (carga libre), igual que en el real
       soc: 62,
       schedule: { enabled: false, mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
@@ -104,7 +104,8 @@ export class SimSource {
       const base = Math.min(s.carMaxKw, (s.limitA * 230) / 1000);
       s.kw = Math.max(0, base + wobble(now));
       s.session.energy += s.kw / 3600;
-      s.soc = Math.min(100, s.session.socStart + (s.session.energy / s.batteryKWh) * 100);
+      s.session.addedPct = (s.session.energy * 0.9 / s.batteryKWh) * 100;
+      s.soc = s.session.socStart == null ? null : Math.min(100, s.session.socStart + s.session.addedPct);
       if (this.targetReached()) {
         s.status = 'SuspendedEVSE';
         s.reached = true;
@@ -196,8 +197,8 @@ export class SimSource {
         if (!name) return { ok: false, msg: 'Poné un nombre para el auto' };
         const bat = Number(arg.batteryKWh) > 1 ? Number(arg.batteryKWh) : null;
         let c = s.cars.find((x) => x.id === arg.id);
-        if (c) Object.assign(c, { name, batteryKWh: bat });
-        else { c = { id: 'c' + Date.now(), name, batteryKWh: bat, color: ['#7DF9FF', '#B6FF3B', '#5B8CFF'][s.cars.length % 3] }; s.cars.push(c); }
+        if (c) Object.assign(c, { name, batteryKWh: bat, chem: arg.chem });
+        else { c = { id: 'c' + Date.now(), name, batteryKWh: bat, chem: arg.chem, color: ['#7DF9FF', '#B6FF3B', '#5B8CFF'][s.cars.length % 3] }; s.cars.push(c); }
         this.emit();
         return { ok: true, msg: 'Auto guardado', carId: c.id };
       }
@@ -210,6 +211,10 @@ export class SimSource {
       case 'cancelStart':
         s.pendingStart = false;
         msg = 'Inicio cancelado';
+        break;
+      case 'setStartSoc':
+        if (s.session) { s.session.socStart = Number(arg); s.soc = Math.min(100, Number(arg) + (s.session.addedPct || 0)); }
+        msg = `Llegó con ${arg} %`;
         break;
       case 'setTariff':
         s.tariff = Number(arg);

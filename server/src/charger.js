@@ -169,6 +169,13 @@ export class Charger extends DurableObject {
         d.connector = ['Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'].includes(p.status) ? 'Conectado' : 'Libre';
         d.faults = p.errorCode && p.errorCode !== 'NoError' ? [p.errorCode + (p.info ? ': ' + p.info : '')] : [];
         if (p.status !== 'Charging') d.kw = 0;
+        {
+          const ss = d.session;
+          if (ss && !ss.closed) {
+            if (p.status === 'SuspendedEV' && ss.energy > 0.5 && !d.paused && !d.reached) { ss.full = true; ss.fullAt = now; this.estimate(ss); }
+            else if (p.status === 'Charging' && ss.full) ss.full = false;
+          }
+        }
         if (p.status === 'Charging' || (p.status === 'Available' && Date.now() - (d.pendingStart || 0) > 5000)) d.pendingStart = 0;
         return {};
 
@@ -181,7 +188,7 @@ export class Charger extends DurableObject {
         if (status !== 'Accepted') return { transactionId: tx, idTagInfo: { status } }; // desconocido: no se anota nada
         const key = d.keys.find((k) => k.tag === p.idTag);
         d.carId = key ? key.carId || null : p.idTag === PANEL_TAG ? d.carId : null;
-        const socStart = d.carId ? d.socByCar[d.carId] ?? null : null;
+        const socStart = null; // el % de llegada lo informa el usuario (el auto anduvo desde la última carga)
         d.pendingStart = 0;
         const start = Date.parse(p.timestamp) || now;
         const day = this.day(start);
@@ -212,6 +219,7 @@ export class Charger extends DurableObject {
           s.closed = true;
           s.end = Date.parse(p.timestamp) || now;
           this.book(s);
+          this.learnFrom(s);
           if (s.carId && d.soc != null) d.socByCar[s.carId] = Math.round(d.soc);
           if (typeof p.meterStop === 'number') d.meterTotal = p.meterStop / 1000;
           d.kw = 0;
@@ -307,12 +315,8 @@ export class Charger extends DurableObject {
 
     if (s && !s.closed && (!p.transactionId || p.transactionId === s.tx)) {
       if (reg !== null) s.energy = Math.max(0, (reg - s.meterStart) / 1000);
-      const bat = this.battery(s.carId);
       if (socMeas !== null) { this.setRealSoc(socMeas, 'MeterValues'); }
-      else if (s.socReal) { /* se mantiene el último % real */ }
-      else d.soc = socMeas !== null ? socMeas
-        : s.socStart != null && bat ? Math.min(100, s.socStart + (s.energy / bat) * 100)
-        : s.socStart != null ? s.socStart : null;
+      else if (!s.socReal) { this.watchTaper(s); this.estimate(s); }
       this.book(s);
       const now = Date.now();
       const last = this.series[this.series.length - 1];
@@ -323,6 +327,74 @@ export class Charger extends DurableObject {
       }
       this.checkTarget();
     }
+  }
+
+  /* ---------- Estimación del % (aprende con cada carga) ---------- */
+
+  carOf(s) { return this.d.cars.find((c) => c.id === s.carId) || null; }
+
+  // Eficiencia: cuánto de lo que entrega el cargador entra a la batería (aprendida por auto)
+  eff(car) { return (car && car.learn && car.learn.eff) || 0.9; }
+
+  // Factor de potencia en el tramo final (80–100 %), aprendido por auto
+  taperFactor(car) { return (car && car.learn && car.learn.taper) || (car && car.chem === 'NMC' ? 0.45 : 0.6); }
+
+  // Detecta cuando el auto empieza a pedir menos energía (cerca de lleno)
+  watchTaper(s) {
+    const d = this.d;
+    if (d.status !== 'Charging' || s.energy < 0.5) return;
+    const amps = Math.max(...d.phases.map((p) => p.a || 0));
+    s.peakKw = Math.max(s.peakKw || 0, d.kw);
+    s.peakA = Math.max(s.peakA || 0, amps);
+    const allowed = Math.min(d.offeredA || 32, d.schedule.enabled ? d.schedule.limitA : 32, s.peakA || 32);
+    if (s.peakA > 6 && amps < 0.6 * allowed) {
+      s.lowCount = (s.lowCount || 0) + 1;
+      if (s.lowCount >= 3 && !s.taper) { s.taper = true; s.taperAt = { t: Date.now(), energy: s.energy } }
+    } else if (!s.taper) s.lowCount = 0;
+    if (s.taper) { s.taperKwSum = (s.taperKwSum || 0) + d.kw; s.taperN = (s.taperN || 0) + 1; }
+  }
+
+  estimate(s) {
+    const d = this.d;
+    const car = this.carOf(s);
+    const cap = car && car.batteryKWh;
+    if (!cap) { s.addedPct = null; s.etaMin = null; if (!s.socReal) d.soc = null; return; }
+    const eff = this.eff(car);
+    s.addedPct = Math.max(0, (s.energy * eff / cap) * 100);
+    if (s.socStart != null) {
+      let est = Math.min(100, s.socStart + s.addedPct);
+      if (s.taper) est = Math.max(est, car.chem === 'NMC' ? 80 : 90); // el auto ya está frenando la carga
+      if (s.full) est = 100;
+      d.soc = est;
+    } else d.soc = s.full ? 100 : null;
+    // Tiempo que falta (hasta el objetivo programado o hasta lleno)
+    const target = d.schedule.enabled && d.schedule.mode === 'soc' ? d.schedule.soc : 100;
+    if (d.soc == null || d.kw < 0.5 || s.full) { s.etaMin = null; return; }
+    const kw = d.kw, peak = s.peakKw || kw, tf = this.taperFactor(car);
+    const kwh = (from, to) => Math.max(0, to - from) / 100 * cap / eff;
+    const t1 = kwh(d.soc, Math.min(target, 80)) / kw;
+    const t2 = kwh(Math.max(d.soc, 80), target) / (s.taper ? kw : peak * tf);
+    s.etaMin = Math.round((t1 + t2) * 60);
+  }
+
+  // Al terminar una carga: si el auto se llenó, se aprende la eficiencia real y la caída final
+  learnFrom(s) {
+    const car = this.carOf(s);
+    if (!car || !car.batteryKWh || !s.full || s.energy < 1) return;
+    const added = s.addedPct || 0;
+    if (s.socStart == null) { s.socStartCalc = Math.max(0, Math.round(100 - added)); return; }
+    const realAdded = 100 - s.socStart;
+    if (realAdded < 10) return;
+    const effObs = Math.min(1, Math.max(0.7, (realAdded / 100) * car.batteryKWh / s.energy));
+    const L = car.learn || { n: 0 };
+    L.eff = L.n ? L.eff * 0.7 + effObs * 0.3 : effObs;
+    if (s.taperN > 3 && s.peakKw) {
+      const tObs = Math.min(1, Math.max(0.15, s.taperKwSum / s.taperN / s.peakKw));
+      L.taper = L.taper ? L.taper * 0.7 + tObs * 0.3 : tObs;
+    }
+    L.n += 1;
+    L.last = Date.now();
+    car.learn = L;
   }
 
   checkTarget() {
@@ -549,12 +621,16 @@ export class Charger extends DurableObject {
       case 'saveCar': {
         const name = String(arg?.name || '').trim().slice(0, 30);
         if (!name) return { ok: false, msg: 'Poné un nombre para el auto' };
-        const bat = Number(arg.batteryKWh);
+        const bat = Number(String(arg.batteryKWh ?? '').replace(',', '.'));
         const batteryKWh = Number.isFinite(bat) && bat > 1 && bat < 300 ? bat : null;
+        const chem = arg.chem === 'NMC' ? 'NMC' : 'LFP';
         let car = d.cars.find((c) => c.id === arg.id);
-        if (car) Object.assign(car, { name, batteryKWh });
-        else {
-          car = { id: 'c' + crypto.randomUUID().slice(0, 8), name, batteryKWh, color: PALETTE[d.cars.length % PALETTE.length] };
+        if (car) {
+          // si cambia la batería o la química, lo aprendido deja de valer
+          if (car.batteryKWh !== batteryKWh || car.chem !== chem) car.learn = null;
+          Object.assign(car, { name, batteryKWh, chem });
+        } else {
+          car = { id: 'c' + crypto.randomUUID().slice(0, 8), name, batteryKWh, chem, color: PALETTE[d.cars.length % PALETTE.length] };
           d.cars.push(car);
         }
         return { ok: true, msg: 'Auto guardado', carId: car.id };
@@ -564,13 +640,28 @@ export class Charger extends DurableObject {
         d.keys.forEach((k) => { if (k.carId === arg) k.carId = null; });
         if (d.carId === arg) d.carId = null;
         return { ok: true, msg: 'Auto borrado' };
+      case 'setStartSoc': {
+        // "El auto llegó con X %"
+        const v = Math.min(100, Math.max(0, Number(arg)));
+        if (!Number.isFinite(v)) return { ok: false, msg: 'Porcentaje inválido' };
+        if (!s) return { ok: false, msg: 'No hay una carga en curso' };
+        s.socStart = Math.round(v);
+        s.socStartBy = 'user';
+        this.estimate(s);
+        if (d.soc == null) d.soc = v;
+        return { ok: true, msg: `Llegó con ${Math.round(v)} %` };
+      }
       case 'setSoc': {
         const v = Math.min(100, Math.max(0, Number(arg)));
         if (!Number.isFinite(v)) return { ok: false, msg: 'Porcentaje inválido' };
-        d.soc = v;
-        const bat = s ? this.battery(s.carId) : null;
-        if (s) s.socStart = bat ? Math.round(v - (s.energy / bat) * 100) : v;
-        else if (d.carId) d.socByCar[d.carId] = v;
+        if (s) {
+          const car = this.carOf(s);
+          const added = car && car.batteryKWh ? (s.energy * this.eff(car) / car.batteryKWh) * 100 : 0;
+          s.socStart = Math.max(0, Math.round(v - added));
+          s.socStartBy = 'user';
+          this.estimate(s);
+          if (d.soc == null) d.soc = v; // auto sin batería cargada: se muestra lo que dijo el usuario
+        } else if (d.carId) d.socByCar[d.carId] = v;
         return { ok: true, msg: `Batería corregida a ${Math.round(v)} %` };
       }
       case 'setTariff': {
@@ -690,7 +781,8 @@ export class Charger extends DurableObject {
       limitA: d.schedule.limitA,
       kw: online ? d.kw : 0,
       phases: d.phases,
-      session: s ? { start: s.start, end: s.end, socStart: s.socStart, energy: s.energy, closed: s.closed, carId: s.carId, tariff: s.tariff ?? null } : null,
+      session: s ? { start: s.start, end: s.end, socStart: s.socStart, energy: s.energy, closed: s.closed, carId: s.carId, tariff: s.tariff ?? null,
+        addedPct: s.addedPct ?? null, full: !!s.full, taper: !!s.taper, etaMin: s.etaMin ?? null, socStartCalc: s.socStartCalc ?? null } : null,
       soc: d.soc,
       schedule: d.schedule,
       meterTotal: d.meterTotal - (s && !s.closed ? s.energy : 0),

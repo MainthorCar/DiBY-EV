@@ -87,6 +87,8 @@ function activeSession() { return S.session && !S.session.closed ? S.session : n
 function projection() {
   const s = activeSession();
   if (!s || S.status !== 'Charging' || S.kw < 0.2) return null;
+  // Lo calcula el servidor con la batería del auto y la caída final de potencia
+  if (s.etaMin != null && s.etaMin > 0) return { end: S.now + s.etaMin * 60000, min: s.etaMin, kw: S.kw };
   const sch = S.schedule;
   if (!sch.enabled) return null;
   if (sch.mode === 'soc' && (S.soc == null || !S.batteryKWh)) return null;
@@ -148,19 +150,23 @@ function renderNow() {
   const withCar = !!S.session && (activeSession() || S.status === 'Finishing');
   const known = withCar && S.soc != null;
   const soc = known ? Math.round(S.soc) : null;
-  // Sin % conocido pero cargando: el centro muestra los kWh cargados
-  const showKwh = withCar && !known;
-  $('socVal').textContent = known ? soc : showKwh ? nf(S.session.energy, 1) : '—';
-  $('socUnit').textContent = known ? '%' : showKwh ? 'kWh' : '';
-  $('socSub').textContent = known ? 'batería estimada'
-    : showKwh ? 'cargados · tocá para poner el %'
+  const added = withCar && S.session.addedPct != null ? S.session.addedPct : null;
+  // Sin % de llegada: "+X %" cargado (si se conoce la batería) o los kWh
+  const showAdd = withCar && !known && added != null;
+  const showKwh = withCar && !known && !showAdd;
+  $('socVal').textContent = known ? soc : showAdd ? '+' + Math.round(added) : showKwh ? nf(S.session.energy, 1) : '—';
+  $('socUnit').textContent = known || showAdd ? '%' : showKwh ? 'kWh' : '';
+  $('socSub').textContent = known ? (S.socReal ? 'batería del auto' : S.session.full ? 'auto lleno' : 'batería estimada')
+    : showAdd ? 'cargado · tocá y decí con cuánto llegó'
+    : showKwh ? 'cargados · cargá la batería del auto en Ajustes'
     : !S.online ? 'cargador desconectado'
     : S.status === 'Preparing' ? 'auto enchufado'
     : S.status === 'Faulted' ? 'revisar el cargador'
     : 'listo para cargar';
   $('targetVal').textContent = targetTxt(S.schedule);
   $('targetVal').parentElement.firstChild.textContent = S.schedule.enabled ? 'objetivo ' : '';
-  $('ringArc').setAttribute('stroke-dasharray', `${known ? ((RING_C * S.soc) / 100).toFixed(1) : 0} ${RING_C.toFixed(1)}`);
+  const arcPct = known ? S.soc : showAdd ? Math.min(100, added) : 0;
+  $('ringArc').setAttribute('stroke-dasharray', `${((RING_C * arcPct) / 100).toFixed(1)} ${RING_C.toFixed(1)}`);
   $('ringSvg').setAttribute('aria-label', known ? `Batería estimada ${soc} por ciento` : 'Sin auto cargando');
   const tick = $('ringTick');
   if (S.schedule.enabled && S.schedule.mode === 'soc') {
@@ -536,13 +542,15 @@ function openCarForm(id) {
   $('carFormTitle').textContent = c ? 'Editar auto' : 'Nuevo auto';
   $('carNameIn').value = c ? c.name : '';
   $('carBatIn').value = c && c.batteryKWh ? c.batteryKWh : '';
+  $('carChemIn').value = c && c.chem === 'NMC' ? 'NMC' : 'LFP';
+  $('carLearn').textContent = learnTxt(c);
   $('carDel').hidden = !c;
   $('carFormDlg').showModal();
   $('carNameIn').focus();
 }
 $('carForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const r = await run('saveCar', { id: editingCar, name: $('carNameIn').value, batteryKWh: Number(String($('carBatIn').value).replace(',', '.')) });
+  const r = await run('saveCar', { id: editingCar, name: $('carNameIn').value, batteryKWh: String($('carBatIn').value), chem: $('carChemIn').value });
   if (r && r.ok) $('carFormDlg').close();
 });
 $('carDel').addEventListener('click', async () => {
@@ -585,7 +593,7 @@ $('keyForm').addEventListener('submit', async (e) => {
   if (carId === '__new') {
     const name = $('keyNewCarName').value.trim();
     if (!name) { toast('Poné el nombre del auto nuevo', true); $('keyNewCarName').focus(); return; }
-    const r = await run('saveCar', { name, batteryKWh: Number(String($('keyNewCarBat').value).replace(',', '.')) });
+    const r = await run('saveCar', { name, batteryKWh: String($('keyNewCarBat').value), chem: $('keyNewCarChem').value });
     if (!r || !r.ok) return;
     carId = r.carId;
   }
@@ -642,8 +650,30 @@ function esc(s) {
 
 /* ---------- Ajustes ---------- */
 
+function learnTxt(c) {
+  if (!c || !c.batteryKWh) return '';
+  const L = c.learn;
+  if (!L || !L.n) return 'Todavía no aprendió: necesita una carga hasta lleno con el % de llegada.';
+  return `Aprendido en ${L.n} ${L.n === 1 ? 'carga' : 'cargas'}: entra a la batería el ${Math.round(L.eff * 100)} % de lo que entrega el cargador.`;
+}
+
+let setCarsSig = '';
+function renderSetCars() {
+  if (!S) return;
+  const sig = JSON.stringify(S.cars);
+  if (sig === setCarsSig) return;
+  setCarsSig = sig;
+  $('setCars').innerHTML = S.cars.length
+    ? S.cars.map((c) => `<button type="button" class="set-car" data-car="${c.id}"><span class="kd" style="background:${c.color};box-shadow:0 0 10px ${c.color}"></span><span><b>${esc(c.name)}</b><small>${c.batteryKWh ? nf(c.batteryKWh, 1) + ' kWh · ' + (c.chem || 'LFP') : 'Falta la batería'}</small></span><span class="lrn">${c.learn && c.learn.n ? 'aprendió ✓' : ''}</span></button>`).join('')
+    : '<p class="note">Todavía no hay autos. Agregá el primero.</p>';
+}
+$('setCars').addEventListener('click', (e) => { const b = e.target.closest('[data-car]'); if (b) openCarForm(b.dataset.car); });
+$('setCarAdd').addEventListener('click', () => openCarForm(null));
+
 function openSettings() {
   if (!S) return;
+  setCarsSig = '';
+  renderSetCars();
   $('tariffIn').value = S.tariff != null ? S.tariff : '';
   $('tariffSince').textContent = S.tariff != null && S.tariffSince
     ? `Precio actual: ${pesos(S.tariff)} por kWh, desde el ${new Date(S.tariffSince).toLocaleDateString('es-AR')}.`
@@ -660,11 +690,42 @@ $('tariffSave').addEventListener('click', async () => {
   if (r && r.ok) { $('settings').hidden = true; histSig = ''; }
 });
 
-/* ---------- Corregir el % de batería (tocando el anillo) ---------- */
+/* ---------- % de batería: con cuánto llegó el auto ---------- */
+
+$('socGrid').innerHTML = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95].map((v) => `<button type="button" data-v="${v}">${v}</button>`).join('');
+function askedKey() { return 'diby-soc-' + (S && S.session ? S.session.start : ''); }
+function openSocDlg() {
+  const c = car();
+  $('socDlgCar').textContent = c ? `${c.name} · tocá el % que marcaba el auto al enchufarlo` : '';
+  if (!$('socDlg').open) $('socDlg').showModal();
+}
+async function sendStart(v) {
+  try { localStorage.setItem(askedKey(), '1'); } catch {}
+  $('socDlg').close();
+  await run('setStartSoc', v);
+}
+$('socGrid').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) sendStart(Number(b.dataset.v)); });
+$('socOtherOk').addEventListener('click', () => {
+  const n = Number(String($('socOther').value).replace(',', '.'));
+  if (Number.isFinite(n) && n >= 0 && n <= 100) sendStart(n); else toast('Poné un número entre 0 y 100', true);
+});
+$('socSkip').addEventListener('click', () => { try { localStorage.setItem(askedKey(), '1'); } catch {} $('socDlg').close(); });
+
+// Se pregunta una sola vez por carga, al enchufar, si el auto tiene la batería cargada
+function maybeAskSoc() {
+  const s = activeSession();
+  if (!s || S.socReal || s.socStart != null || s.full) return;
+  const c = car();
+  if (!c || !c.batteryKWh) return;
+  let asked = false;
+  try { asked = !!localStorage.getItem(askedKey()); } catch {}
+  if (!asked && !document.querySelector('dialog[open]')) openSocDlg();
+}
 
 document.querySelector('.ring-wrap').addEventListener('click', () => {
-  if (!S) return;
-  const v = prompt('¿Qué % de batería marca el auto ahora?', Math.round(S.soc));
+  if (!S || !activeSession()) return;
+  if (S.session.socStart == null) { openSocDlg(); return; }
+  const v = prompt('¿Qué % marca el auto ahora?', S.soc != null ? Math.round(S.soc) : '');
   if (v === null) return;
   const n = Number(String(v).replace(',', '.'));
   if (Number.isFinite(n) && n >= 0 && n <= 100) run('setSoc', n);
@@ -700,6 +761,8 @@ function start(src) {
     document.querySelector('.c-keys').classList.toggle('learning', !!S.learning || $('addKey').disabled);
     render();
     renderDiag();
+    maybeAskSoc();
+    if (!$('settings').hidden) renderSetCars();
   });
 }
 
