@@ -292,6 +292,9 @@ export class Charger extends DurableObject {
         else if (meas === 'Power.Active.Import') { if (unit === 'kw') v *= 1000; if (i < 0) power = v; else phPow[i] = v; }
         else if (meas === 'Current.Import') { if (i >= 0) cur[i] = v; else if (cur[0] === null) cur[0] = v; }
         else if (meas === 'Voltage') { if (i >= 0) volt[i] = v; }
+        else if (meas === 'Current.Offered') this.d.offeredA = v;
+        else if (meas === 'Power.Offered') this.d.offeredKw = unit === 'w' ? v / 1000 : v;
+        else if (meas === 'Frequency') this.d.hz = v;
         else if (meas === 'SoC') { socMeas = v; this.d.socSeen = { t: Date.now(), v, raw: sv }; }
       }
     }
@@ -356,7 +359,8 @@ export class Charger extends DurableObject {
   async configure() {
     if (Date.now() - (this.cfgAt || 0) < 30000) return; // ya se está configurando
     this.cfgAt = Date.now();
-    const MEAS = 'Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage';
+    // Todo lo que este cargador acepta informar (probado uno por uno el 03/11)
+    const MEAS = 'Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage,Current.Offered,Power.Offered,Frequency,Energy.Reactive.Import.Register';
     const results = {};
     const set = async (key, value) => {
       const r = await this.call('ChangeConfiguration', { key, value }).catch((e) => ({ status: 'Error: ' + e.message }));
@@ -705,6 +709,9 @@ export class Charger extends DurableObject {
       attempts: d.attempts || [],
       diag: { cfgLog: d.cfgLog || [], cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [], evInfo: d.evInfo || [], socSeen: d.socSeen || null, socReal: d.socReal || null },
       socReal: !!(s && !s.closed && s.socReal),
+      offeredA: d.offeredA ?? null,
+      offeredKw: d.offeredKw ?? null,
+      hz: d.hz ?? null,
       history,
     };
   }
