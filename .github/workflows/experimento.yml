@@ -3,7 +3,7 @@ name: Experimento ISO 15118
 on:
   push:
     branches: [diag]
-    paths: ['diag/go-experimento.txt']
+    paths: ['diag/go-experimento.txt', 'diag/go-experimento2.txt']
 
 permissions:
   contents: write
@@ -11,6 +11,7 @@ permissions:
 jobs:
   probar:
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,11 +20,11 @@ jobs:
       - name: Activar ISO 15118 y pedir el %
         env:
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
-        run: node diag/experimento.mjs
+        run: if [ -f diag/go-experimento2.txt ]; then node diag/experimento2.mjs; else node diag/experimento.mjs; fi
       - name: Guardar resultado
         run: |
           git config user.name "DiBY diag"
           git config user.email "diag@users.noreply.github.com"
-          git add diag/experimento.txt
+          git add diag/experimento*.txt
           git commit -m "Resultado experimento ISO 15118"
           git push
