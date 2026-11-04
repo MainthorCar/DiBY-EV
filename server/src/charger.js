@@ -354,6 +354,8 @@ export class Charger extends DurableObject {
   }
 
   async configure() {
+    if (Date.now() - (this.cfgAt || 0) < 30000) return; // ya se está configurando
+    this.cfgAt = Date.now();
     const MEAS = 'Energy.Active.Import.Register,Power.Active.Import,Current.Import,Voltage';
     const results = {};
     const set = async (key, value) => {
@@ -575,6 +577,18 @@ export class Charger extends DurableObject {
         if (s) { s.tariff = v; this.book(s); }
         return { ok: true, msg: 'Precio guardado' };
       }
+      case 'setConfig': {
+        const ALLOWED = ['ISO15118ChargeEnabled', 'MeterValuesSampledData', 'MeterValuesAlignedData', 'EvPresenceNotification', 'StopTxnSampledData', 'StopTxnAlignedData'];
+        if (!ALLOWED.includes(arg?.key)) return { ok: false, msg: 'Ajuste no permitido' };
+        const r = await this.call('ChangeConfiguration', { key: arg.key, value: String(arg.value) });
+        d.cfgLog = [{ t: Date.now(), key: arg.key, value: String(arg.value), status: r.status }, ...(d.cfgLog || [])].slice(0, 20);
+        return { ok: r.status === 'Accepted' || r.status === 'RebootRequired', msg: `${arg.key}: ${r.status}`, status: r.status };
+      }
+      case 'getConfig': {
+        const r = await this.call('GetConfiguration', arg && arg.keys ? { key: arg.keys } : {});
+        if (!arg || !arg.keys) d.cfg = (r.configurationKey || []).map((k) => [k.key, k.value]).slice(0, 150);
+        return { ok: true, msg: 'ok', config: r.configurationKey || [], unknown: r.unknownKey || [] };
+      }
       case 'registerApp': {
         const dev = String(arg?.dev || '').replace(/[^A-Z0-9]/gi, '').slice(0, 32);
         if (dev.length < 8) return { ok: false, msg: 'Teléfono no reconocido' };
@@ -689,7 +703,7 @@ export class Charger extends DurableObject {
       boot: d.boot,
       chargerId: d.chargerId,
       attempts: d.attempts || [],
-      diag: { cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [], evInfo: d.evInfo || [], socSeen: d.socSeen || null, socReal: d.socReal || null },
+      diag: { cfgLog: d.cfgLog || [], cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [], evInfo: d.evInfo || [], socSeen: d.socSeen || null, socReal: d.socReal || null },
       socReal: !!(s && !s.closed && s.socReal),
       history,
     };
