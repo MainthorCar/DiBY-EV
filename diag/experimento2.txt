@@ -1,0 +1,10 @@
+Antes: en línea | Available
+Reiniciar → Reiniciando el cargador…
+   00:38:19 esperando que vuelva…
+   00:38:49 esperando que vuelva…
+   00:39:19 volvió en línea
+ISO 15118 ahora: false
+Pedir % (SoC) con ISO 15118 ya activo → Rejected
+Datos durante la carga (sin %) → Accepted
+Datos cada 15 s → Accepted
+Estado final: Available
