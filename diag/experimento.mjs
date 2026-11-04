@@ -37,8 +37,26 @@ log('Activar ISO 15118 →', r.status || r.msg);
 r = await c.cmd('setConfig', { key: 'MeterValuesSampledData', value: MEAS + ',SoC' });
 log('Pedir % (SoC) con ISO 15118 activo →', r.status || r.msg);
 if (r.status !== 'Accepted') { r = await c.cmd('setConfig', { key: 'MeterValuesSampledData', value: MEAS }); log('Volver a los datos normales →', r.status || r.msg); }
-r = await c.cmd('getConfig', { keys: ['ISO15118ChargeEnabled', 'MeterValuesSampledData', 'EvPresenceNotification'] });
-for (const k of r.config || []) log('  ', k.key, '=', k.value);
+// Probar uno por uno todos los datos que define OCPP 1.6
+const CAND = ['SoC', 'Current.Offered', 'Power.Offered', 'Frequency', 'Temperature', 'Power.Factor', 'Current.Export',
+  'Energy.Active.Export.Register', 'Energy.Reactive.Import.Register', 'Power.Reactive.Import', 'Energy.Active.Import.Interval',
+  'Power.Active.Export', 'RPM'];
+const ok = [];
+log('--- Datos que acepta informar (probados de a uno) ---');
+for (const m of CAND) {
+  r = await c.cmd('setConfig', { key: 'MeterValuesAlignedData', value: MEAS + ',' + m });
+  log('  ', m.padEnd(34), '→', r.status || r.msg);
+  if (r.status === 'Accepted') ok.push(m);
+}
+// Dejar pedidos los normales + los extra aceptados (máximo 10)
+const fin = [MEAS, ...ok].join(',').split(',').slice(0, 10).join(',');
+r = await c.cmd('setConfig', { key: 'MeterValuesAlignedData', value: fin });
+log('Datos cada 15 s →', fin, '→', r.status || r.msg);
+r = await c.cmd('setConfig', { key: 'MeterValuesSampledData', value: fin });
+log('Datos durante la carga →', fin, '→', r.status || r.msg);
+log('--- Todos los ajustes del cargador ---');
+r = await c.cmd('getConfig', {});
+for (const k of r.config || []) log('  ', (k.readonly ? '[fijo]      ' : '[cambiable] ') + k.key, '=', k.value);
 c.close();
 writeFileSync('diag/experimento.txt', out.join('\n'));
 process.exit(0);
