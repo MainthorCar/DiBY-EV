@@ -52,6 +52,7 @@ export class SimSource {
       ],
       days: this.makeDays(now),
       tariffSince: now - 20 * DAY,
+      weather: { t: 23.4, code: 1, at: now },
     };
     this.lastPush = now;
     setInterval(() => this.tick(), 1000);

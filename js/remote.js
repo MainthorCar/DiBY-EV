@@ -50,6 +50,7 @@ export class RemoteSource {
         if (w) { this.waits.delete(m.id); w(m); }
       } else if (m.type === 'event') {
         for (const fn of this.eventWaits) fn(m);
+        window.dispatchEvent(new CustomEvent('diby-event', { detail: m }));
       }
     };
     ws.onclose = () => {

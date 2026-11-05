@@ -137,6 +137,9 @@ function renderTop() {
   cd.style.background = S.online ? '#19C8FF' : '#FF4D6D';
   cd.style.color = S.online ? '#19C8FF' : '#FF4D6D';
   $('clock').textContent = hhmm(Date.now());
+  const w = S.weather;
+  $('temp').hidden = !(w && Date.now() - w.at < 2 * 3600000);
+  if (w) $('temp').textContent = `${Math.round(w.t)}°`;
 }
 
 function renderNow() {
@@ -694,9 +697,19 @@ $('tariffSave').addEventListener('click', async () => {
 
 $('socGrid').innerHTML = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95].map((v) => `<button type="button" data-v="${v}">${v}</button>`).join('');
 function askedKey() { return 'diby-soc-' + (S && S.session ? S.session.start : ''); }
-function openSocDlg() {
+function renderSocCars() {
   const c = car();
-  $('socDlgCar').textContent = c ? `${c.name} · tocá el % que marcaba el auto al enchufarlo` : '';
+  $('socCars').innerHTML = S.cars.map((x) => `<button type="button" data-car="${x.id}" aria-pressed="${!!c && c.id === x.id}"><span class="dot" style="background:${x.color};color:${x.color}"></span>${esc(x.name)}</button>`).join('');
+}
+$('socCars').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-car]');
+  if (!b) return;
+  $('socCars').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  await run('setCar', b.dataset.car);
+});
+function openSocDlg() {
+  renderSocCars();
+  $('socDlgCar').textContent = 'Tocá el % que marcaba el auto al enchufarlo';
   if (!$('socDlg').open) $('socDlg').showModal();
 }
 async function sendStart(v) {
@@ -715,8 +728,6 @@ $('socSkip').addEventListener('click', () => { try { localStorage.setItem(askedK
 function maybeAskSoc() {
   const s = activeSession();
   if (!s || S.socReal || s.socStart != null || s.full) return;
-  const c = car();
-  if (!c || !c.batteryKWh) return;
   let asked = false;
   try { asked = !!localStorage.getItem(askedKey()); } catch {}
   if (!asked && !document.querySelector('dialog[open]')) openSocDlg();
@@ -729,6 +740,11 @@ document.querySelector('.ring-wrap').addEventListener('click', () => {
   if (v === null) return;
   const n = Number(String(v).replace(',', '.'));
   if (Number.isFinite(n) && n >= 0 && n <= 100) run('setSoc', n);
+});
+
+// El servidor reconoció el auto por cómo carga
+window.addEventListener('diby-event', (e) => {
+  if (e.detail.event === 'carDetected') toast(`Detecté que es ${e.detail.name}`);
 });
 
 /* ---------- Arranque ---------- */

@@ -98,6 +98,7 @@ export class Charger extends DurableObject {
 
     this.ctx.acceptWebSocket(server, ['ui']);
     server.send(JSON.stringify({ type: 'state', state: this.snapshot() }));
+    this.refreshWeather();
     // Al abrir la página, pedir datos frescos al cargador
     if (this.ctx.getWebSockets('ocpp').length && Date.now() - (this.lastTrigger || 0) > 10000) {
       setTimeout(() => this.trigger().catch(() => {}), 100);
@@ -190,6 +191,7 @@ export class Charger extends DurableObject {
         d.carId = key ? key.carId || null : p.idTag === PANEL_TAG ? d.carId : null;
         const socStart = null; // el % de llegada lo informa el usuario (el auto anduvo desde la última carga)
         d.pendingStart = 0;
+        this.refreshWeather();
         const start = Date.parse(p.timestamp) || now;
         const day = this.day(start);
         const h = hk(d.carId);
@@ -198,6 +200,7 @@ export class Charger extends DurableObject {
           tx, start, meterStart: p.meterStart || 0, energy: 0,
           socStart, carId: d.carId, keyId: key ? key.id : null, idTag: p.idTag, closed: false,
           day: this.dayKey(start), base: day[h] || 0, costBase: day['$' + h] || 0, tariff: d.tariff,
+          tempC: d.weather && Date.now() - d.weather.at < 3600000 ? d.weather.t : null,
         };
         d.soc = socStart;
         d.reached = false;
@@ -220,6 +223,7 @@ export class Charger extends DurableObject {
           s.end = Date.parse(p.timestamp) || now;
           this.book(s);
           this.learnFrom(s);
+          this.learnProfile(s);
           if (s.carId && d.soc != null) d.socByCar[s.carId] = Math.round(d.soc);
           if (typeof p.meterStop === 'number') d.meterTotal = p.meterStop / 1000;
           d.kw = 0;
@@ -329,6 +333,55 @@ export class Charger extends DurableObject {
     }
   }
 
+  // Mueve los kWh, pesos y la cuenta de cargas del día de un auto a otro
+  moveSessionCar(s, newId) {
+    const day = this.d.history[s.day || this.dayKey(s.start)] || this.day(s.start);
+    const from = hk(s.carId), to = hk(newId);
+    if (from !== to) {
+      const cost = s.tariff != null ? s.energy * s.tariff : 0;
+      day[from] = Math.max(0, (day[from] || 0) - s.energy);
+      if (day['$' + from] != null) day['$' + from] = Math.max(0, day['$' + from] - cost);
+      day['#' + from] = Math.max(0, (day['#' + from] || 0) - 1);
+      day['#' + to] = (day['#' + to] || 0) + 1;
+      s.base = day[to] || 0;
+      s.costBase = day['$' + to] || 0;
+    }
+    s.carId = newId;
+    this.book(s);
+  }
+
+  // Cómo carga cada auto (fases y potencia): sirve para reconocerlo solo
+  learnProfile(s) {
+    const car = this.carOf(s);
+    if (!car || !s.peakKw || s.energy < 1) return;
+    const L = car.learn || { n: 0 };
+    const p = L.prof || {};
+    L.prof = { phases: s.maxPhases || p.phases || null, kw: p.kw ? p.kw * 0.6 + s.peakKw * 0.4 : s.peakKw };
+    car.learn = L;
+  }
+
+  // A los pocos minutos: si la forma de cargar no coincide con el auto de la llave, se corrige sola
+  detectCar(s) {
+    const d = this.d;
+    if (s.carChecked || d.status !== 'Charging' || s.energy < 0.3 || d.kw < 1) return;
+    s.carChecked = true;
+    const ph = s.maxPhases || 0, kw = d.kw;
+    const fits = (c) => {
+      const p = c.learn && c.learn.prof;
+      if (!p || !p.kw) return null;
+      if (p.phases && ph && p.phases !== ph) return false;
+      return Math.abs(p.kw - kw) / p.kw < 0.3;
+    };
+    const cur = this.carOf(s);
+    if (cur && fits(cur) !== false) return; // coincide, o todavía no sabemos cómo carga
+    const m = d.cars.filter((c) => c !== cur && fits(c) === true);
+    if (m.length !== 1) return;
+    this.moveSessionCar(s, m[0].id);
+    d.carId = m[0].id;
+    s.carAuto = { from: cur ? cur.id : null, to: m[0].id };
+    this.event({ event: 'carDetected', name: m[0].name });
+  }
+
   /* ---------- Estimación del % (aprende con cada carga) ---------- */
 
   carOf(s) { return this.d.cars.find((c) => c.id === s.carId) || null; }
@@ -346,6 +399,8 @@ export class Charger extends DurableObject {
     const amps = Math.max(...d.phases.map((p) => p.a || 0));
     s.peakKw = Math.max(s.peakKw || 0, d.kw);
     s.peakA = Math.max(s.peakA || 0, amps);
+    s.maxPhases = Math.max(s.maxPhases || 0, d.phases.filter((p) => (p.a || 0) > 3).length);
+    this.detectCar(s);
     const allowed = Math.min(d.offeredA || 32, d.schedule.enabled ? d.schedule.limitA : 32, s.peakA || 32);
     if (s.peakA > 6 && amps < 0.6 * allowed) {
       s.lowCount = (s.lowCount || 0) + 1;
@@ -386,8 +441,11 @@ export class Charger extends DurableObject {
     const realAdded = 100 - s.socStart;
     if (realAdded < 10) return;
     const effObs = Math.min(1, Math.max(0.7, (realAdded / 100) * car.batteryKWh / s.energy));
+    s.prevLearn = car.learn ? JSON.parse(JSON.stringify(car.learn)) : null;
+    s.learnedCar = car.id;
     const L = car.learn || { n: 0 };
-    L.eff = L.n ? L.eff * 0.7 + effObs * 0.3 : effObs;
+    if (!L.n) L.n = 0;
+    L.eff = L.n && L.eff ? L.eff * 0.7 + effObs * 0.3 : effObs;
     if (s.taperN > 3 && s.peakKw) {
       const tObs = Math.min(1, Math.max(0.15, s.taperKwSum / s.taperN / s.peakKw));
       L.taper = L.taper ? L.taper * 0.7 + tObs * 0.3 : tObs;
@@ -600,23 +658,25 @@ export class Charger extends DurableObject {
         const car = d.cars.find((c) => c.id === arg);
         if (arg && !car) return { ok: false, msg: 'Auto desconocido' };
         d.carId = car ? car.id : null;
-        if (s) {
-          const day = this.d.history[s.day || this.dayKey(s.start)] || this.day(s.start);
-          const from = hk(s.carId), to = hk(d.carId);
-          if (from !== to) {
-            const cost = s.tariff != null ? s.energy * s.tariff : 0;
-            day[from] = Math.max(0, (day[from] || 0) - s.energy);
-            if (day['$' + from] != null) day['$' + from] = Math.max(0, day['$' + from] - cost);
-            day['#' + from] = Math.max(0, (day['#' + from] || 0) - 1);
-            day['#' + to] = (day['#' + to] || 0) + 1;
-            s.base = day[to] || 0;
-            s.costBase = day['$' + to] || 0;
-          }
-          s.carId = d.carId;
-          this.book(s);
-          if (s.socStart == null && d.carId) s.socStart = d.socByCar[d.carId] ?? null;
-        }
+        if (s) { this.moveSessionCar(s, d.carId); s.carChecked = true; this.estimate(s); }
         return { ok: true, msg: car ? 'Auto: ' + car.name : 'Sin auto asignado' };
+      }
+      case 'moveSession': {
+        // Pasar la última carga (aunque ya haya terminado) a otro auto, y re-aprender
+        const ls = d.session;
+        const car = d.cars.find((c) => c.id === arg);
+        if (!ls || !car) return { ok: false, msg: 'No hay carga o auto' };
+        const old = this.carOf(ls);
+        if (old && ls.learnedCar === old.id && 'prevLearn' in ls) old.learn = ls.prevLearn;
+        this.moveSessionCar(ls, car.id);
+        if (ls.closed) { ls.addedPct = null; this.estimate(ls); this.learnFrom(ls); this.learnProfile(ls); }
+        return { ok: true, msg: 'Carga pasada a ' + car.name };
+      }
+      case 'setCarLearn': {
+        const car = d.cars.find((c) => c.id === arg?.id);
+        if (!car) return { ok: false, msg: 'Auto desconocido' };
+        car.learn = arg.learn || null;
+        return { ok: true, msg: 'Aprendizaje de ' + car.name + ' ajustado' };
       }
       case 'saveCar': {
         const name = String(arg?.name || '').trim().slice(0, 30);
@@ -782,7 +842,7 @@ export class Charger extends DurableObject {
       kw: online ? d.kw : 0,
       phases: d.phases,
       session: s ? { start: s.start, end: s.end, socStart: s.socStart, energy: s.energy, closed: s.closed, carId: s.carId, tariff: s.tariff ?? null,
-        addedPct: s.addedPct ?? null, full: !!s.full, taper: !!s.taper, etaMin: s.etaMin ?? null, socStartCalc: s.socStartCalc ?? null } : null,
+        addedPct: s.addedPct ?? null, full: !!s.full, tempC: s.tempC ?? null, carAuto: s.carAuto || null, taper: !!s.taper, etaMin: s.etaMin ?? null, socStartCalc: s.socStartCalc ?? null } : null,
       soc: d.soc,
       schedule: d.schedule,
       meterTotal: d.meterTotal - (s && !s.closed ? s.energy : 0),
@@ -801,6 +861,7 @@ export class Charger extends DurableObject {
       attempts: d.attempts || [],
       diag: { cfgLog: d.cfgLog || [], cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [], evInfo: d.evInfo || [], socSeen: d.socSeen || null, socReal: d.socReal || null },
       socReal: !!(s && !s.closed && s.socReal),
+      weather: d.weather || null,
       offeredA: d.offeredA ?? null,
       offeredKw: d.offeredKw ?? null,
       hz: d.hz ?? null,
@@ -816,6 +877,22 @@ export class Charger extends DurableObject {
   event(e) {
     const msg = JSON.stringify({ type: 'event', ...e });
     for (const ws of this.ctx.getWebSockets('ui')) { try { ws.send(msg); } catch {} }
+  }
+
+  async refreshWeather() {
+    const w = this.d.weather;
+    if (this.wBusy || (w && Date.now() - w.at < 15 * 60000)) return;
+    this.wBusy = true;
+    try {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=-33.89&longitude=-60.57&current=temperature_2m,weather_code&timezone=America%2FArgentina%2FBuenos_Aires');
+      const j = await r.json();
+      if (j && j.current) {
+        this.d.weather = { t: j.current.temperature_2m, code: j.current.weather_code, at: Date.now() };
+        await this.save();
+        this.broadcast();
+      }
+    } catch {}
+    this.wBusy = false;
   }
 
   logMsg(dir, raw) {

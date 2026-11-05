@@ -419,3 +419,13 @@ button.key:hover{border-color:var(--line2)}
 #socDlg .note{color:var(--m)}
 /* En el celular, las tarjetas de Ajustes siempre visibles */
 .settings .card{display:flex !important;width:auto !important}
+
+/* Elegir auto en la ventana de llegada */
+.car-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.car-chips button{display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border:1px solid var(--line2);border-radius:999px;background:transparent;color:var(--t2);font-size:14px}
+.car-chips button[aria-pressed=true]{border-color:var(--g);color:#fff;background:rgba(43,255,136,.08);box-shadow:0 0 12px rgba(43,255,136,.3)}
+.car-chips .dot{width:8px;height:8px}
+#socDlg h2{margin:2px 0}
+/* Temperatura al lado de la hora */
+.temp{font-size:16px;color:var(--b);text-shadow:0 0 10px rgba(25,200,255,.5)}
+@media (max-width:760px){.temp{font-size:13px}}
