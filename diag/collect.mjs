@@ -38,6 +38,7 @@ setTimeout(() => {
     boot: first?.boot || null,
     mensajes: [...msgs.values()].sort((a, b) => a.t - b.t).map((l) => ({ hora: new Date(l.t).toISOString(), dir: l.dir, m: l.m })),
     estados: states.filter((_, i) => i % 3 === 0),
+    serie: first?.series || [],
     ultimoEstado: states.length ? { ...first, diag: undefined, series: undefined, days: undefined } : null,
   };
   writeFileSync('diag/datos.json', redact(JSON.stringify(out, null, 1)));
