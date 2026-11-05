@@ -20,7 +20,7 @@ jobs:
       - name: Activar ISO 15118 y pedir el %
         env:
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
-        run: if [ -f diag/go-experimento2.txt ]; then node diag/experimento2.mjs; else node diag/experimento.mjs; fi
+        run: node diag/arreglo.mjs
       - name: Guardar resultado
         run: |
           git config user.name "DiBY diag"
