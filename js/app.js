@@ -1,6 +1,6 @@
-import { CONFIG } from './config.js';
-import { SimSource } from './sim.js';
-import { RemoteSource, getToken, setToken, login } from './remote.js';
+import { CONFIG } from './config.js?v=1.0.2';
+import { SimSource } from './sim.js?v=1.0.2';
+import { RemoteSource, getToken, setToken, login } from './remote.js?v=1.0.2';
 
 const $ = (id) => document.getElementById(id);
 const nf = (n, d = 2) => Number(n).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
