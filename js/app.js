@@ -121,13 +121,16 @@ function render() {
 
 function renderTop() {
   const c = car();
-  const plugged = !!activeSession() || ['Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'].includes(S.status);
-  const col = plugged && c ? c.color : '#7E9389';
-  $('carName').textContent = !plugged ? 'Sin auto enchufado' : c ? c.name : 'Auto sin asignar';
+  const ss = activeSession();
+  const cl = ss && ss.client;
+  const plugged = !!ss || ['Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'].includes(S.status);
+  const col = cl ? '#FFB020' : plugged && c ? c.color : '#7E9389';
+  $('carName').textContent = cl ? 'Cliente: ' + cl.name : !plugged ? 'Sin auto enchufado' : c ? c.name : 'Auto sin asignar';
+  $('carChip').classList.toggle('client', !!cl);
   $('carDot').style.background = col;
   $('carDot').style.color = col;
-  const key = S.keys.find((k) => k.id === S.keyId);
-  $('keyName').textContent = key && activeSession() ? `· llave «${key.name}»` : '';
+  const kn = ss && !cl ? (ss.keyName || (S.keys.find((k) => k.id === S.keyId) || {}).name) : null;
+  $('keyName').textContent = kn ? `· llave «${kn}»` : '';
   const ago = Math.round((Date.now() - S.lastSeen) / 1000);
   $('connText').textContent = S.link === 'down' ? 'Sin conexión con el servidor'
     : !S.online ? 'Cargador desconectado'
@@ -149,43 +152,31 @@ function renderNow() {
   pill.dataset.kind = kind;
 
   const charging = S.status === 'Charging';
-  // El % solo tiene sentido con un auto cargando (o recién terminado)
-  const withCar = !!S.session && (activeSession() || S.status === 'Finishing');
-  const known = withCar && S.soc != null;
-  const soc = known ? Math.round(S.soc) : null;
-  const added = withCar && S.session.addedPct != null ? S.session.addedPct : null;
-  // Sin % de llegada: "+X %" cargado (si se conoce la batería) o los kWh
-  const showAdd = withCar && !known && added != null;
-  const showKwh = withCar && !known && !showAdd;
-  $('socVal').textContent = known ? soc : showAdd ? '+' + Math.round(added) : showKwh ? nf(S.session.energy, 1) : '—';
-  $('socUnit').textContent = known || showAdd ? '%' : showKwh ? 'kWh' : '';
-  $('socSub').textContent = known ? (S.socReal ? 'batería del auto' : S.session.full ? 'auto lleno' : 'batería estimada')
-    : showAdd ? 'cargado · tocá y decí con cuánto llegó'
-    : showKwh ? 'cargados · cargá la batería del auto en Ajustes'
-    : !S.online ? 'cargador desconectado'
-    : S.status === 'Preparing' ? 'auto enchufado'
-    : S.status === 'Faulted' ? 'revisar el cargador'
-    : 'listo para cargar';
-  $('targetVal').textContent = targetTxt(S.schedule);
-  $('targetVal').parentElement.firstChild.textContent = S.schedule.enabled ? 'objetivo ' : '';
-  const arcPct = known ? S.soc : showAdd ? Math.min(100, added) : 0;
-  $('ringArc').setAttribute('stroke-dasharray', `${((RING_C * arcPct) / 100).toFixed(1)} ${RING_C.toFixed(1)}`);
-  $('ringSvg').setAttribute('aria-label', known ? `Batería estimada ${soc} por ciento` : 'Sin auto cargando');
-  const tick = $('ringTick');
-  if (S.schedule.enabled && S.schedule.mode === 'soc') {
-    const th = ((S.schedule.soc / 100) * 360 - 90) * (Math.PI / 180);
-    tick.setAttribute('x1', 110 + 81 * Math.cos(th)); tick.setAttribute('y1', 110 + 81 * Math.sin(th));
-    tick.setAttribute('x2', 110 + 107 * Math.cos(th)); tick.setAttribute('y2', 110 + 107 * Math.sin(th));
-    tick.style.display = '';
-  } else tick.style.display = 'none';
-
-  document.querySelector('.ring-wrap').classList.toggle('idle', !charging);
-  $('cable').classList.toggle('idle', !charging);
+  const ss = activeSession() || (S.session && S.status === 'Finishing' ? S.session : null);
+  const cl = ss && ss.client;
+  $('bigKwh').textContent = ss ? nf(ss.energy, 2) : '—';
+  $('eLbl').textContent = ss ? 'CARGADO' : !S.online ? 'DESCONECTADO' : S.status === 'Preparing' ? 'AUTO ENCHUFADO' : 'LISTO PARA CARGAR';
+  $('eUnit').textContent = ss ? 'kWh' : '';
+  const en = $('energy');
+  en.classList.toggle('idle', !charging);
+  // El anillo gira más rápido cuanta más potencia entra (2 s a 22 kW, 10 s casi sin potencia)
+  en.style.setProperty('--spd', `${Math.max(2, 10 - (S.kw / 22) * 8).toFixed(1)}s`);
   $('kwVal').textContent = nf(S.kw);
-
-  const p = projection();
-  $('etaEnd').textContent = p ? hhmm(p.end) : '—';
-  $('etaLeft').textContent = p ? leftTxt(p.min) : '—';
+  $('nowDur').textContent = ss ? dur((ss.closed ? ss.end : S.now) - ss.start) : '—';
+  const tariff = ss ? ss.tariff ?? S.tariff : null;
+  $('nowCostLbl').textContent = cl ? 'A cobrar' : 'Gastado';
+  $('nowCostBox').classList.toggle('client', !!cl);
+  $('nowCost').textContent = ss && tariff != null ? pesos(ss.energy * tariff) : '—';
+  // Hoy y el mes (de la empresa)
+  const now = new Date();
+  const dk = dkey(now), mk = dk.slice(0, 7);
+  let dK = 0, dM = 0, mM = 0;
+  for (const [k, v] of Object.entries(S.days || {})) {
+    const m = sumDay(v);
+    if (k === dk) { dK = m.kwh; dM = m.cost; }
+    if (k.startsWith(mk)) mM += m.cost;
+  }
+  $('nowSum').innerHTML = `<span>Hoy <b>${nf(dK, 1)} kWh · ${pesos(dM)}</b></span><span>${MONTHS[now.getMonth()]} <b>${pesos(mM)}</b></span>`;
 
   S.phases.forEach((ph, i) => {
     const el = phaseEls[i];
@@ -272,8 +263,8 @@ function renderStats() {
   if (!s) { ['stEnergy', 'stDur', 'stBatt', 'stCost'].forEach((id) => { $(id).textContent = '—'; }); return; }
   $('stEnergy').innerHTML = `${nf(s.energy)} <small>kWh</small>`;
   $('stDur').textContent = dur((s.closed ? s.end : S.now) - s.start);
-  $('stBatt').innerHTML = `${s.socStart} → ${Math.round(S.soc)} <small>%</small>`;
   const tariff = s.tariff ?? S.tariff;
+  $('stBatt').innerHTML = tariff != null ? `${pesos(tariff)} <small>/kWh</small>` : '—';
   $('stCostLbl').title = tariff != null ? `A $${tariff} por kWh` : 'Cargá el precio del kWh en Ajustes';
   $('stCost').textContent = tariff != null ? pesos(s.energy * tariff) : '—';
 }
@@ -287,96 +278,120 @@ function renderProgSummary() {
 }
 
 let histSig = '';
-let histMode = 'week';
+let histMode = 'month';
 let monthOff = 0;
+let yearOff = 0;
 const DNAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const pesos = (n) => '$ ' + Math.round(n).toLocaleString('es-AR');
 function dkey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+// Totales de un día guardado: { autoId: kWh, '$autoId': pesos, '#autoId': cargas }
+function sumDay(v) {
+  let kwh = 0, cost = 0, n = 0;
+  for (const [k, x] of Object.entries(v || {})) {
+    if (k[0] === '$') cost += x; else if (k[0] === '#') n += x; else kwh += x;
+  }
+  return { kwh, cost, n };
+}
+function carInfo(id) {
+  const c = S.cars.find((x) => x.id === id);
+  const key = S.keys.find((k) => k.carId === id);
+  return { name: c ? c.name : 'Sin auto', color: c ? c.color : '#7E9389', key: key ? key.name : '' };
+}
 
 function renderHist() {
-  const sig = JSON.stringify([S.days, S.cars, histMode, monthOff, new Date().getDate()]);
+  const sig = JSON.stringify([S.days, S.charges && S.charges.length && S.charges[0], S.cars, S.keys.length, histMode, monthOff, yearOff, new Date().getDate()]);
   if (sig === histSig) return;
   histSig = sig;
   const days = S.days || {};
-  const list = [...S.cars, NOCAR];
   const now = new Date();
-  const cols = [];
-  if (histMode === 'week') {
-    for (let i = 6; i >= 0; i--) {
-      const t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      cols.push({ key: dkey(t), label: i === 0 ? 'Hoy' : DNAMES[t.getDay()], today: i === 0 });
+  const yr = now.getFullYear() + yearOff;
+  const m = new Date(now.getFullYear(), now.getMonth() + monthOff, 1);
+  const pre = histMode === 'month' ? `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}` : String(yr);
+  $('mLabel').textContent = histMode === 'month' ? `${MONTHS[m.getMonth()]} ${m.getFullYear()}` : `Año ${yr}`;
+  $('mNext').disabled = histMode === 'month' ? monthOff >= 0 : yearOff >= 0;
+
+  // Totales del período y por auto
+  const per = {};
+  let kwh = 0, cost = 0, n = 0;
+  for (const [k, v] of Object.entries(days)) {
+    if (!k.startsWith(pre)) continue;
+    for (const [a, x] of Object.entries(v)) {
+      const id = a[0] === '$' || a[0] === '#' ? a.slice(1) : a;
+      const t = per[id] || (per[id] = { kwh: 0, cost: 0, n: 0 });
+      if (a[0] === '$') { t.cost += x; cost += x; } else if (a[0] === '#') { t.n += x; n += x; } else { t.kwh += x; kwh += x; }
     }
-  } else {
-    const m = new Date(now.getFullYear(), now.getMonth() + monthOff, 1);
-    const n = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
-    for (let d = 1; d <= n; d++) {
-      const t = new Date(m.getFullYear(), m.getMonth(), d);
-      const k = dkey(t);
-      cols.push({ key: k, label: d === 1 || d % 5 === 0 ? String(d) : '', today: k === dkey(now), future: t > now });
-    }
-    $('mLabel').textContent = `${MONTHS[m.getMonth()]} ${m.getFullYear()}`;
-    $('mNext').disabled = monthOff >= 0;
   }
-  $('histTitle').textContent = histMode === 'week' ? 'Últimos 7 días' : 'Mes';
-  $('monthNav').hidden = histMode !== 'month';
+  $('gMoney').textContent = pesos(cost);
+  $('gKwh').innerHTML = `${nf(kwh, 1)} <small>kWh</small>`;
+  $('gN').textContent = String(n);
+  $('gCars').innerHTML = Object.entries(per).filter(([, t]) => t.kwh > 0.05).sort((a, b) => b[1].cost - a[1].cost).map(([id, t]) => {
+    const c = carInfo(id);
+    return `<div class="g-car"><span title="${esc(c.name)}${c.key ? ' · ' + esc(c.key) : ''}"><i style="background:${c.color};box-shadow:0 0 8px ${c.color}"></i>${esc(c.name)}</span><b>${nf(t.kwh, 1)} kWh · <em>${pesos(t.cost)}</em></b></div>`;
+  }).join('') || '<div class="g-car"><span>Sin cargas en este período</span></div>';
+  // Acumulado del año (en la vista de mes)
+  if (histMode === 'month') {
+    let yk = 0, yc = 0;
+    for (const [k, v] of Object.entries(days)) if (k.startsWith(String(m.getFullYear()))) { const t = sumDay(v); yk += t.kwh; yc += t.cost; }
+    $('gYear').innerHTML = `<span>Acumulado ${m.getFullYear()}</span><b>${nf(yk, 1)} kWh · ${pesos(yc)}</b>`;
+    $('gYear').hidden = false;
+  } else $('gYear').hidden = true;
 
-  // Totales por auto en el período
-  const tot = Object.fromEntries(list.map((c) => [c.id, { kwh: 0, cost: 0, n: 0, priced: true }]));
-  const dayTot = cols.map((col) => {
-    const v = days[col.key] || {};
-    let sum = 0;
-    for (const c of list) {
-      const k = v[c.id] || 0;
-      sum += k;
-      tot[c.id].kwh += k;
-      tot[c.id].cost += v['$' + c.id] || 0;
-      tot[c.id].n += v['#' + c.id] || 0;
-      if (k > 0.01 && v['$' + c.id] == null) tot[c.id].priced = false;
+  // Tabla
+  const head = `<div class="g-row head"><span>${histMode === 'month' ? 'FECHA' : 'MES'}</span><span>${histMode === 'month' ? 'AUTO' : 'CARGAS'}</span><span class="n">kWh</span><span class="m">$</span></div>`;
+  const rows = [];
+  if (histMode === 'month') {
+    const charges = (S.charges || []).filter((c) => !c.client);
+    const keys = Object.keys(days).filter((k) => k.startsWith(pre)).sort().reverse();
+    keys.forEach((k, i) => {
+      const v = days[k];
+      const tot = sumDay(v);
+      if (tot.kwh < 0.05) return;
+      const dt = new Date(k + 'T12:00:00');
+      const label = `${DNAMES[dt.getDay()]} ${k.slice(8, 10)}/${k.slice(5, 7)}`;
+      const alt = rows.length % 2 ? ' alt' : '';
+      // Con registro de cada carga (desde ahora): una fila por carga con la hora
+      const dayCh = charges.filter((c) => dkey(new Date(c.start)) === k);
+      const lines = [];
+      const cars = Object.keys(v).filter((a) => a[0] !== '$' && a[0] !== '#' && v[a] > 0.05);
+      const covered = new Set();
+      dayCh.slice().reverse().forEach((c) => {
+        const ci = carInfo(c.carId || '_');
+        covered.add(c.carId || '_');
+        lines.push({ c: esc(c.car || ci.name), t: c.key ? 'Llave: ' + c.key : '', h: `${hhmm(c.start)}–${hhmm(c.end)}`, color: ci.color, kwh: c.kwh, cost: c.cost || 0 });
+      });
+      // Días o autos sin registro detallado: total del auto en el día
+      cars.filter((a) => !covered.has(a)).forEach((a) => {
+        const ci = carInfo(a);
+        const cnt = v['#' + a] || 0;
+        lines.push({ c: `${esc(ci.name)}${cnt > 1 ? ` (${cnt})` : ''}`, t: ci.key ? 'Llave: ' + ci.key : '', h: '', color: ci.color, kwh: v[a], cost: v['$' + a] || 0 });
+      });
+      lines.forEach((l, j) => rows.push(`<div class="g-row${alt}${j ? ' sub' : ''}"><span class="d">${j ? '' : label}${l.h ? `<small>${l.h}</small>` : ''}</span><span class="c" title="${esc(l.t || '')}"><i style="background:${l.color};box-shadow:0 0 6px ${l.color}"></i>${l.c}</span><span class="n">${nf(l.kwh, 1)}</span><span class="m">${pesos(l.cost)}</span></div>`));
+      if (lines.length > 1) rows.push(`<div class="g-row sub tot${alt}"><span class="d"></span><span class="c">Total del día</span><span class="n">${nf(tot.kwh, 1)}</span><span class="m">${pesos(tot.cost)}</span></div>`);
+    });
+  } else {
+    for (let mo = 11; mo >= 0; mo--) {
+      const mp = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+      let k2 = 0, c2 = 0, n2 = 0;
+      for (const [k, v] of Object.entries(days)) if (k.startsWith(mp)) { const t = sumDay(v); k2 += t.kwh; c2 += t.cost; n2 += t.n; }
+      if (k2 < 0.05) continue;
+      rows.push(`<div class="g-row${rows.length % 2 ? ' alt' : ''}"><span class="d">${MONTHS[mo]}</span><span class="c">${n2} ${n2 === 1 ? 'carga' : 'cargas'}</span><span class="n">${nf(k2, 1)}</span><span class="m">${pesos(c2)}</span></div>`);
     }
-    return sum;
-  });
-  const kwhAll = dayTot.reduce((a, b) => a + b, 0);
-  const costAll = list.reduce((a, c) => a + tot[c.id].cost, 0);
-  $('weekTotal').textContent = `${nf(kwhAll, kwhAll < 100 ? 1 : 0)} kWh`;
-  $('histMoney').textContent = costAll > 0 ? pesos(costAll) : '';
-
-  const max = Math.max(histMode === 'week' ? 10 : 8, ...dayTot);
-  $('bars').classList.toggle('month', histMode === 'month');
-  $('bars').innerHTML = cols.map((col, i) => {
-    const v = days[col.key] || {};
-    const segs = list.map((c) => {
-      const k = v[c.id] || 0;
-      if (k <= 0.01) return '';
-      return `<div class="s" style="height:${((k / max) * 100).toFixed(1)}%;background:${c.color};box-shadow:0 0 10px ${c.color}" title="${esc(c.name)}: ${nf(k, 1)} kWh"></div>`;
-    }).join('');
-    const cls = `bar${col.today ? ' today' : ''}${col.future ? ' future' : ''}`;
-    const totLbl = histMode === 'week' ? `<span class="tot">${dayTot[i] ? nf(dayTot[i], 0) : ''}</span>` : '';
-    return `<div class="${cls}" title="${col.key}: ${nf(dayTot[i], 1)} kWh">${totLbl}<div class="stack">${segs}</div><span class="lb">${col.label}</span></div>`;
-  }).join('');
-
-  // Leyenda: solo los autos que cargaron en este período
-  const leg = list.filter((c) => tot[c.id].kwh > 0.01);
-  $('legend').innerHTML = leg.length
-    ? leg.map((c) => {
-      const t = tot[c.id];
-      const money = t.cost > 0 ? ` · <em>${pesos(t.cost)}</em>` : '';
-      const n = t.n ? ` · ${t.n} ${t.n === 1 ? 'carga' : 'cargas'}` : '';
-      return `<span class="lg"><i style="background:${c.color};box-shadow:0 0 8px ${c.color}"></i><b>${esc(c.name)}</b> ${nf(t.kwh, 1)} kWh${money}${n}</span>`;
-    }).join('')
-    : `<span>Sin cargas ${histMode === 'week' ? 'en los últimos 7 días' : 'en este mes'}.</span>`;
+  }
+  $('gTableTitle').textContent = histMode === 'month' ? 'Saldo diario' : 'Mes por mes';
+  $('gTable').innerHTML = head + (rows.join('') || '<div class="g-empty">Sin cargas en este período.</div>');
 }
 
 document.querySelectorAll('#histSeg button').forEach((b) => b.addEventListener('click', () => {
   histMode = b.dataset.h;
-  monthOff = 0;
+  monthOff = 0; yearOff = 0;
   document.querySelectorAll('#histSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   if (S) renderHist();
 }));
-$('mPrev').addEventListener('click', () => { monthOff--; if (S) renderHist(); });
-$('mNext').addEventListener('click', () => { if (monthOff < 0) monthOff++; if (S) renderHist(); });
+$('mPrev').addEventListener('click', () => { if (histMode === 'month') monthOff--; else yearOff--; if (S) renderHist(); });
+$('mNext').addEventListener('click', () => { if (histMode === 'month') { if (monthOff < 0) monthOff++; } else if (yearOff < 0) yearOff++; if (S) renderHist(); });
 
 let keySig = '';
 function renderKeys() {
@@ -479,12 +494,29 @@ $('btnToggle').addEventListener('click', () => {
   if (S && S.pendingStart) { run('cancelStart'); return; }
   const st = S ? S.status : '';
   const starting = !activeSession() && !['Charging', 'SuspendedEV', 'SuspendedEVSE'].includes(st);
-  if (starting && !confirm(st === 'Available'
-    ? '¿Iniciar la carga? El cargador va a esperar 1 minuto a que enchufes el auto.'
-    : '¿Iniciar la carga ahora?')) return;
+  if (!starting) { run('toggle'); return; }
   const k = myKey();
-  run('toggle', k ? { tag: 'APP-' + DEV } : undefined);
+  if (k) { run('toggle', { keyId: k.id }); return; }
+  openStartDlg();
 });
+
+function openStartDlg() {
+  const keys = S.keys.filter((k) => !k.dev || k.dev === DEV);
+  if (!keys.length) { toast('Primero registrá una llave', true); return; }
+  if (keys.length === 1) { run('toggle', { keyId: keys[0].id }); return; }
+  $('startKeys').innerHTML = keys.map((k) => {
+    const c = S.cars.find((x) => x.id === k.carId);
+    return `<button type="button" data-key="${k.id}"><span class="dot" style="background:${c ? c.color : '#7E9389'};color:${c ? c.color : '#7E9389'}"></span><span>${esc(k.name)}<small>${c ? esc(c.name) : 'Sin auto asignado'}</small></span></button>`;
+  }).join('');
+  $('startDlg').showModal();
+}
+$('startKeys').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-key]');
+  if (!b) return;
+  $('startDlg').close();
+  run('toggle', { keyId: b.dataset.key });
+});
+$('startCancel').addEventListener('click', () => $('startDlg').close());
 $('keyList').addEventListener('click', async (e) => {
   if (!e.target.closest('#regPhone')) return;
   const r = await run('registerApp', { dev: DEV, name: 'Teléfono ' + (APP.deviceName() || '') });
@@ -675,6 +707,7 @@ $('setCarAdd').addEventListener('click', () => openCarForm(null));
 
 function openSettings() {
   if (!S) return;
+  renderServer();
   setCarsSig = '';
   renderSetCars();
   $('tariffIn').value = S.tariff != null ? S.tariff : '';
@@ -693,59 +726,77 @@ $('tariffSave').addEventListener('click', async () => {
   if (r && r.ok) { $('settings').hidden = true; histSig = ''; }
 });
 
-/* ---------- % de batería: con cuánto llegó el auto ---------- */
+/* ---------- Modo servidor (solo PC) ---------- */
 
-$('socGrid').innerHTML = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95].map((v) => `<button type="button" data-v="${v}">${v}</button>`).join('');
-function askedKey() { return 'diby-soc-' + (S && S.session ? S.session.start : ''); }
-function renderSocCars() {
-  const c = car();
-  $('socCars').innerHTML = S.cars.map((x) => `<button type="button" data-car="${x.id}" aria-pressed="${!!c && c.id === x.id}"><span class="dot" style="background:${x.color};color:${x.color}"></span>${esc(x.name)}</button>`).join('');
+let srvPin = '';
+function renderServer() {
+  if (!S || !S.server) return;
+  const on = S.server.on;
+  $('srvOn').checked = on;
+  $('srvOnTxt').textContent = on ? 'Activo' : 'Apagado';
+  $('srvCard').classList.toggle('on', on);
+  $('srvPinLbl').textContent = S.server.hasPin ? 'PIN' : 'Creá un PIN (4 a 8 números)';
+  $('srvPinNew').hidden = S.server.hasPin;
+  $('srvPinBox').hidden = on && !!srvPin;
+  $('srvForm').hidden = !(on && srvPin);
+  $('cliCost').textContent = S.tariff != null ? `Tu precio de costo: ${pesos(S.tariff)} por kWh` : '';
+  $('cliStart').disabled = !!activeSession();
+  const now = new Date();
+  const mk = dkey(now).slice(0, 7);
+  const list = (S.charges || []).filter((c) => c.client);
+  const month = list.filter((c) => dkey(new Date(c.start)).startsWith(mk));
+  const tot = month.reduce((a, c) => a + (c.cost || 0), 0);
+  $('cliList').innerHTML = `<div class="srv-total"><span>${MONTHS[now.getMonth()]}: ${month.length} ${month.length === 1 ? 'carga' : 'cargas'}</span><b>${pesos(tot)}</b></div>`
+    + list.slice(0, 12).map((c) => `<button type="button" class="srv-item" data-ch="${c.id}"><span>${new Date(c.start).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</span><span>${esc(c.client.name)}<small>${nf(c.kwh, 1)} kWh · ${pesos(c.client.price)}/kWh</small></span><b>${pesos(c.cost || 0)}</b></button>`).join('');
 }
-$('socCars').addEventListener('click', async (e) => {
-  const b = e.target.closest('[data-car]');
-  if (!b) return;
-  $('socCars').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-  await run('setCar', b.dataset.car);
+$('srvPinNew').addEventListener('click', async () => {
+  const r = await run('serverPin', { pin: $('srvPin').value });
+  if (r && r.ok) { srvPin = $('srvPin').value; $('srvPin').value = ''; }
 });
-function openSocDlg() {
-  renderSocCars();
-  $('socDlgCar').textContent = 'Tocá el % que marcaba el auto al enchufarlo';
-  if (!$('socDlg').open) $('socDlg').showModal();
-}
-async function sendStart(v) {
-  try { localStorage.setItem(askedKey(), '1'); } catch {}
-  $('socDlg').close();
-  await run('setStartSoc', v);
-}
-$('socGrid').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) sendStart(Number(b.dataset.v)); });
-$('socOtherOk').addEventListener('click', () => {
-  const n = Number(String($('socOther').value).replace(',', '.'));
-  if (Number.isFinite(n) && n >= 0 && n <= 100) sendStart(n); else toast('Poné un número entre 0 y 100', true);
+$('srvOn').addEventListener('change', async (e) => {
+  const want = e.target.checked;
+  const pin = srvPin || $('srvPin').value;
+  if (!pin) { e.target.checked = !want; toast('Escribí el PIN', true); $('srvPin').focus(); return; }
+  const r = await run('serverMode', { pin, on: want });
+  if (r && r.ok) { srvPin = want ? pin : ''; $('srvPin').value = ''; } else e.target.checked = !want;
+  renderServer();
 });
-$('socSkip').addEventListener('click', () => { try { localStorage.setItem(askedKey(), '1'); } catch {} $('socDlg').close(); });
-
-// Se pregunta una sola vez por carga, al enchufar, si el auto tiene la batería cargada
-function maybeAskSoc() {
-  const s = activeSession();
-  if (!s || S.socReal || s.socStart != null || s.full) return;
-  let asked = false;
-  try { asked = !!localStorage.getItem(askedKey()); } catch {}
-  if (!asked && !document.querySelector('dialog[open]')) openSocDlg();
-}
-
-document.querySelector('.ring-wrap').addEventListener('click', () => {
-  if (!S || !activeSession()) return;
-  if (S.session.socStart == null) { openSocDlg(); return; }
-  const v = prompt('¿Qué % marca el auto ahora?', S.soc != null ? Math.round(S.soc) : '');
-  if (v === null) return;
-  const n = Number(String(v).replace(',', '.'));
-  if (Number.isFinite(n) && n >= 0 && n <= 100) run('setSoc', n);
+$('cliStart').addEventListener('click', async () => {
+  const name = $('cliName').value.trim();
+  const price = $('cliPrice').value;
+  if (!name || !price) { toast('Completá el cliente y el precio', true); return; }
+  if (!confirm(`¿Iniciar la carga para ${name} a $ ${price} por kWh?`)) return;
+  const r = await run('startClient', { pin: srvPin, name, price });
+  if (r && r.ok) { $('settings').hidden = true; $('cliName').value = ''; }
 });
 
-// El servidor reconoció el auto por cómo carga
-window.addEventListener('diby-event', (e) => {
-  if (e.detail.event === 'carDetected') toast(`Detecté que es ${e.detail.name}`);
+// Comprobante para el cliente
+let lastTicket = null;
+function showTicket(c) {
+  const rows = [
+    ['Fecha', new Date(c.start).toLocaleDateString('es-AR')],
+    ['Horario', `${hhmm(c.start)} a ${hhmm(c.end)}`],
+    ['Cliente', esc(c.client.name)],
+    ['Energía', `${nf(c.kwh, 2)} kWh`],
+    ['Precio', `${pesos(c.client.price)} por kWh`],
+  ];
+  $('ticketRows').innerHTML = rows.map(([a, b]) => `<div class="t-row"><span>${a}</span><b>${b}</b></div>`).join('')
+    + `<div class="t-row big"><span>Total</span><b>${pesos(c.cost || 0)}</b></div>`;
+  if (!$('ticketDlg').open) $('ticketDlg').showModal();
+}
+$('cliList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ch]');
+  const c = b && (S.charges || []).find((x) => String(x.id) === b.dataset.ch);
+  if (c) showTicket(c);
 });
+$('ticketOk').addEventListener('click', () => $('ticketDlg').close());
+$('ticketPrint').addEventListener('click', () => window.print());
+function maybeTicket() {
+  const c = S.charges && S.charges[0];
+  if (lastTicket === null) { lastTicket = c ? c.id : 0; return; } // al abrir no se muestra uno viejo
+  if (!c || !c.client) return;
+  if (c.id !== lastTicket && Date.now() - c.end < 600000) { lastTicket = c.id; if (!document.body.classList.contains('in-app') && innerWidth > 900) showTicket(c); }
+}
 
 /* ---------- Arranque ---------- */
 
@@ -777,8 +828,8 @@ function start(src) {
     document.querySelector('.c-keys').classList.toggle('learning', !!S.learning || $('addKey').disabled);
     render();
     renderDiag();
-    maybeAskSoc();
-    if (!$('settings').hidden) renderSetCars();
+    maybeTicket();
+    if (!$('settings').hidden) { renderSetCars(); renderServer(); }
   });
 }
 

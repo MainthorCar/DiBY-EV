@@ -188,18 +188,23 @@ export class Charger extends DurableObject {
         const tx = d.txSeq++;
         if (status !== 'Accepted') return { transactionId: tx, idTagInfo: { status } }; // desconocido: no se anota nada
         const key = d.keys.find((k) => k.tag === p.idTag);
-        d.carId = key ? key.carId || null : p.idTag === PANEL_TAG ? d.carId : null;
-        const socStart = null; // el % de llegada lo informa el usuario (el auto anduvo desde la última carga)
+        // Carga a un cliente (modo servidor): la inició la PC en los últimos 3 minutos
+        const pc = d.pendingClient && now - d.pendingClient.t < 180000 && p.idTag === PANEL_TAG ? d.pendingClient : null;
+        d.pendingClient = null;
+        // La llave decide el auto. Siempre.
+        d.carId = pc ? null : key ? key.carId || null : null;
+        const socStart = null;
         d.pendingStart = 0;
         this.refreshWeather();
         const start = Date.parse(p.timestamp) || now;
         const day = this.day(start);
         const h = hk(d.carId);
-        day['#' + h] = (day['#' + h] || 0) + 1;
+        if (!pc) day['#' + h] = (day['#' + h] || 0) + 1;
         d.session = {
           tx, start, meterStart: p.meterStart || 0, energy: 0,
-          socStart, carId: d.carId, keyId: key ? key.id : null, idTag: p.idTag, closed: false,
-          day: this.dayKey(start), base: day[h] || 0, costBase: day['$' + h] || 0, tariff: d.tariff,
+          socStart, carId: d.carId, keyId: key ? key.id : null, keyName: key ? key.name : null, idTag: p.idTag, closed: false,
+          day: this.dayKey(start), base: day[h] || 0, costBase: day['$' + h] || 0, tariff: pc ? pc.price : d.tariff,
+          client: pc ? { name: pc.name, price: pc.price } : null,
           tempC: d.weather && Date.now() - d.weather.at < 3600000 ? d.weather.t : null,
         };
         d.soc = socStart;
@@ -222,8 +227,7 @@ export class Charger extends DurableObject {
           s.closed = true;
           s.end = Date.parse(p.timestamp) || now;
           this.book(s);
-          this.learnFrom(s);
-          this.learnProfile(s);
+          this.record(s);
           if (s.carId && d.soc != null) d.socByCar[s.carId] = Math.round(d.soc);
           if (typeof p.meterStop === 'number') d.meterTotal = p.meterStop / 1000;
           d.kw = 0;
@@ -400,7 +404,7 @@ export class Charger extends DurableObject {
     s.peakKw = Math.max(s.peakKw || 0, d.kw);
     s.peakA = Math.max(s.peakA || 0, amps);
     s.maxPhases = Math.max(s.maxPhases || 0, d.phases.filter((p) => (p.a || 0) > 3).length);
-    this.detectCar(s);
+    // (la detección automática del auto se sacó: manda la llave)
     const allowed = Math.min(d.offeredA || 32, d.schedule.enabled ? d.schedule.limitA : 32, s.peakA || 32);
     if (s.peakA > 6 && amps < 0.6 * allowed) {
       s.lowCount = (s.lowCount || 0) + 1;
@@ -601,9 +605,10 @@ export class Charger extends DurableObject {
           d.reached = false;
           return { ok: true, msg: 'Carga reanudada' };
         }
-        // Si la orden viene de un teléfono registrado, la carga queda a nombre de ese teléfono
-        const own = arg && arg.tag ? d.keys.find((k) => k.tag === arg.tag) : null;
-        const key = own || d.keys.find((k) => k.carId === d.carId);
+        // La carga queda a nombre de la llave que se eligió en la página (o la del teléfono)
+        const own = arg && arg.keyId ? d.keys.find((k) => k.id === arg.keyId) : arg && arg.tag ? d.keys.find((k) => k.tag === arg.tag) : null;
+        if (!own) return { ok: false, msg: 'Elegí con qué llave cargar' };
+        const key = own;
         const r = await this.call('RemoteStartTransaction', { connectorId: 1, idTag: key ? key.tag : PANEL_TAG });
         if (r.status !== 'Accepted') return { ok: false, msg: 'El cargador no aceptó iniciar' };
         d.pendingStart = Date.now();
@@ -659,6 +664,11 @@ export class Charger extends DurableObject {
         if (arg && !car) return { ok: false, msg: 'Auto desconocido' };
         d.carId = car ? car.id : null;
         if (s) { this.moveSessionCar(s, d.carId); s.carChecked = true; this.estimate(s); }
+        else if (d.session && d.session.closed && arg !== undefined && Date.now() - (d.session.end || 0) < 12 * 3600000) {
+          // corregir el auto de la última carga ya terminada
+          this.moveSessionCar(d.session, d.carId);
+          if (d.session.recorded) this.record(d.session);
+        }
         return { ok: true, msg: car ? 'Auto: ' + car.name : 'Sin auto asignado' };
       }
       case 'moveSession': {
@@ -669,7 +679,7 @@ export class Charger extends DurableObject {
         const old = this.carOf(ls);
         if (old && ls.learnedCar === old.id && 'prevLearn' in ls) old.learn = ls.prevLearn;
         this.moveSessionCar(ls, car.id);
-        if (ls.closed) { ls.addedPct = null; this.estimate(ls); this.learnFrom(ls); this.learnProfile(ls); }
+        if (ls.closed) { ls.addedPct = null; this.estimate(ls); this.learnFrom(ls); this.learnProfile(ls); if (ls.recorded) this.record(ls); }
         return { ok: true, msg: 'Carga pasada a ' + car.name };
       }
       case 'setCarLearn': {
@@ -732,6 +742,34 @@ export class Charger extends DurableObject {
         if (s) { s.tariff = v; this.book(s); }
         return { ok: true, msg: 'Precio guardado' };
       }
+      case 'serverPin': {
+        // Crear o cambiar el PIN del modo servidor
+        const pin = String(arg?.pin || '');
+        if (!/^\d{4,8}$/.test(pin)) return { ok: false, msg: 'El PIN tiene que ser de 4 a 8 números' };
+        if (d.server && d.server.pinHash && (await sha(arg.old || '')) !== d.server.pinHash) return { ok: false, msg: 'El PIN actual no es correcto' };
+        d.server = { ...(d.server || {}), pinHash: await sha(pin) };
+        return { ok: true, msg: 'PIN guardado' };
+      }
+      case 'serverMode': {
+        if (!d.server || !d.server.pinHash) return { ok: false, msg: 'Primero creá el PIN' };
+        if ((await sha(arg?.pin || '')) !== d.server.pinHash) return { ok: false, msg: 'PIN incorrecto' };
+        d.server.on = !!arg.on;
+        return { ok: true, msg: d.server.on ? 'Modo servidor activado' : 'Modo servidor apagado' };
+      }
+      case 'startClient': {
+        if (!d.server || !d.server.on) return { ok: false, msg: 'El modo servidor está apagado' };
+        if ((await sha(arg?.pin || '')) !== d.server.pinHash) return { ok: false, msg: 'PIN incorrecto' };
+        const name = String(arg.name || '').trim().slice(0, 40);
+        const price = Number(String(arg.price ?? '').replace(',', '.'));
+        if (!name) return { ok: false, msg: 'Poné el cliente o la patente' };
+        if (!(price > 0 && price < 1e6)) return { ok: false, msg: 'Poné el precio por kWh' };
+        if (s) return { ok: false, msg: 'Ya hay una carga en curso' };
+        d.pendingClient = { name, price, t: Date.now() };
+        const r = await this.call('RemoteStartTransaction', { connectorId: 1, idTag: PANEL_TAG });
+        if (r.status !== 'Accepted') { d.pendingClient = null; return { ok: false, msg: 'El cargador no aceptó iniciar' }; }
+        d.pendingStart = Date.now();
+        return { ok: true, msg: `Carga para ${name}: enchufá el auto` };
+      }
       case 'setConfig': {
         const ALLOWED = ['ISO15118ChargeEnabled', 'MeterValuesSampledData', 'MeterValuesAlignedData', 'EvPresenceNotification', 'StopTxnSampledData', 'StopTxnAlignedData'];
         if (!ALLOWED.includes(arg?.key)) return { ok: false, msg: 'Ajuste no permitido' };
@@ -782,10 +820,26 @@ export class Charger extends DurableObject {
 
   // Anota la energía y el costo de la sesión en el día en que empezó
   book(s) {
+    if (s.client) return; // cargas a terceros: van aparte
     const day = this.d.history[s.day || this.dayKey(s.start)] || this.day(s.start);
     const h = hk(s.carId);
     day[h] = (s.base || 0) + s.energy;
     if (s.tariff != null) day['$' + h] = (s.costBase || 0) + s.energy * s.tariff;
+  }
+
+  // Registro de cada carga terminada (para el saldo diario con horas)
+  record(s) {
+    const d = this.d;
+    const car = this.carOf(s);
+    const r = {
+      id: s.tx, start: s.start, end: s.end, kwh: Math.round(s.energy * 1000) / 1000,
+      carId: s.carId || null, car: car ? car.name : null, key: s.keyName || null,
+      tariff: s.tariff ?? null, cost: s.tariff != null ? Math.round(s.energy * s.tariff) : null,
+      client: s.client || null, tempC: s.tempC ?? null,
+    };
+    d.charges = [r, ...(d.charges || []).filter((x) => x.id !== r.id)].slice(0, 3000);
+    s.recorded = true;
+    return r;
   }
 
   dayKey(t) {
@@ -842,7 +896,8 @@ export class Charger extends DurableObject {
       kw: online ? d.kw : 0,
       phases: d.phases,
       session: s ? { start: s.start, end: s.end, socStart: s.socStart, energy: s.energy, closed: s.closed, carId: s.carId, tariff: s.tariff ?? null,
-        addedPct: s.addedPct ?? null, full: !!s.full, tempC: s.tempC ?? null, carAuto: s.carAuto || null, taper: !!s.taper, etaMin: s.etaMin ?? null, socStartCalc: s.socStartCalc ?? null } : null,
+        addedPct: s.addedPct ?? null, full: !!s.full, tempC: s.tempC ?? null, carAuto: s.carAuto || null,
+        client: s.client || null, keyName: s.keyName || null, id: s.tx, taper: !!s.taper, etaMin: s.etaMin ?? null, socStartCalc: s.socStartCalc ?? null } : null,
       soc: d.soc,
       schedule: d.schedule,
       meterTotal: d.meterTotal - (s && !s.closed ? s.energy : 0),
@@ -862,6 +917,8 @@ export class Charger extends DurableObject {
       diag: { cfgLog: d.cfgLog || [], cfgSet: d.cfgSet || {}, cfg: d.cfg || [], log: this.log || [], evInfo: d.evInfo || [], socSeen: d.socSeen || null, socReal: d.socReal || null },
       socReal: !!(s && !s.closed && s.socReal),
       weather: d.weather || null,
+      charges: (d.charges || []).slice(0, 600),
+      server: { hasPin: !!(d.server && d.server.pinHash), on: !!(d.server && d.server.on) },
       offeredA: d.offeredA ?? null,
       offeredKw: d.offeredKw ?? null,
       hz: d.hz ?? null,
@@ -904,6 +961,11 @@ export class Charger extends DurableObject {
   async save() {
     await this.ctx.storage.put('d', this.d);
   }
+}
+
+async function sha(txt) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('diby-pin:' + txt));
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function iso(t) {

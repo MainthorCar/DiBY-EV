@@ -429,3 +429,141 @@ button.key:hover{border-color:var(--line2)}
 /* Temperatura al lado de la hora */
 .temp{font-size:16px;color:var(--b);text-shadow:0 0 10px rgba(25,200,255,.5)}
 @media (max-width:760px){.temp{font-size:13px}}
+
+/* ===== v1.0: kWh grande con anillo de energía ===== */
+.energy{position:relative;align-self:center;width:min(240px,30vh);aspect-ratio:1;flex:none}
+.energy-svg{width:100%;height:100%;display:block;overflow:visible}
+.energy-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.e-lbl{font-size:12px;letter-spacing:.16em;color:var(--m)}
+.e-num{font-size:clamp(40px,7.5vh,64px);font-weight:600;line-height:1.05;color:#fff;text-shadow:0 0 22px rgba(43,255,136,.7)}
+.e-unit{font-size:16px;font-weight:600;color:var(--g)}
+.e-spin1{transform-origin:130px 130px;animation:spin var(--spd,6s) linear infinite}
+.e-spin2{transform-origin:130px 130px;animation:spin calc(var(--spd,6s) * 1.8) linear infinite reverse}
+.e-glow{transform-origin:130px 130px;animation:ePulse 1.6s ease-in-out infinite}
+@keyframes ePulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.05);opacity:1}}
+.energy.idle .e-spin1,.energy.idle .e-spin2,.energy.idle .e-glow{animation-play-state:paused}
+.energy.idle .e-glow{opacity:.15}
+.energy.idle .e-num{text-shadow:none;color:var(--t2)}
+.now-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:none}
+.nt{padding:8px 10px;border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.nt>span{font-size:11px;color:var(--m)}
+.nt b{font-size:clamp(16px,2.4vh,20px);font-weight:500;color:#fff;white-space:nowrap}
+.nt b small{font-size:11px;color:var(--g)}
+.nt.money-t{border-color:rgba(43,255,136,.35)}
+.nt.money-t b{color:var(--g)}
+.nt.client{border-color:#FFB020;box-shadow:0 0 12px rgba(255,176,32,.25)}
+.nt.client b{color:#FFB020}
+.now-sum{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;font-size:13px;color:var(--m);flex:none}
+.now-sum b{color:#fff;font-family:var(--mono);font-weight:500}
+.carchip.client{border-color:#FFB020;box-shadow:0 0 18px rgba(255,176,32,.3)}
+
+/* ===== Gastos ===== */
+.g-sum{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid rgba(43,255,136,.35);border-radius:14px;flex:none}
+.g-sum .month-nav{justify-content:space-between}
+.g-sum .month-nav span{font-size:15px;font-weight:600}
+.g-tot{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;text-align:center}
+.g-tot span{display:block;font-size:11px;color:var(--m)}
+.g-tot b{font-size:clamp(17px,2.6vh,22px);font-weight:500;color:#fff}
+.g-tot b.money{color:var(--g);text-shadow:0 0 12px rgba(43,255,136,.5)}
+.g-cars{display:flex;flex-direction:column;gap:3px;font-size:13px}
+.g-car{display:flex;justify-content:space-between;gap:8px}
+.g-car span{display:flex;align-items:center;gap:6px}
+.g-car i{width:8px;height:8px;border-radius:50%}
+.g-car b{font-family:var(--mono);font-weight:400}
+.g-car b em{font-style:normal;color:var(--g)}
+.g-year{display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--line);font-size:12px;color:var(--m)}
+.g-year b{font-family:var(--mono);font-weight:400;color:#fff}
+.g-h{margin:0;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--m);flex:none}
+.g-table{flex:1;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:12px}
+.g-row{display:grid;grid-template-columns:84px 1fr 62px 84px;gap:6px;align-items:center;padding:7px 12px;font-size:13px;border-top:1px solid var(--line)}
+.g-row.head{position:sticky;top:0;background:#07110C;border-top:0;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--m);z-index:1}
+.g-row.sub{border-top:0}
+.g-row.alt{background:#030605}
+.g-row .d{font-weight:600}
+.g-row .d small{display:block;font-weight:400;font-size:11px;color:var(--d);font-family:var(--mono)}
+.g-row .c{display:flex;align-items:center;gap:6px;color:var(--t2);min-width:0}
+.g-row .c i{width:7px;height:7px;border-radius:50%;flex:none}
+.g-row .n,.g-row .m{font-family:var(--mono);text-align:right}
+.g-row .m{color:var(--g)}
+.g-row.tot .c,.g-row.tot .n,.g-row.tot .m{font-weight:700;color:#fff}
+.g-row.tot .m{color:var(--g)}
+.g-empty{padding:18px;text-align:center;color:var(--m);font-size:13px}
+.g-row .cl{color:#FFB020}
+
+/* ===== Modo servidor (solo PC) ===== */
+.srv-switch input:checked+.switch-track{background:rgba(255,176,32,.25);border-color:#FFB020;box-shadow:0 0 14px rgba(255,176,32,.45)}
+.srv-switch input:checked+.switch-track::after{box-shadow:0 0 10px #FFB020}
+#srvCard.on{border-color:rgba(255,176,32,.45)}
+#srvCard.on .switch-txt{color:#FFB020}
+.srv-pin,.srv-form{display:flex;flex-direction:column;gap:8px}
+.srv-pin input,.srv-form>input{height:46px;border:1px solid var(--line2);border-radius:10px;background:#000;color:#fff;font:inherit;font-size:16px;padding:0 14px}
+.srv-form h3{margin:8px 0 0;font-size:14px;font-weight:600}
+.srv-money{border-color:#FFB020}
+.srv-money span{color:#FFB020}
+.srv-money small{font-size:13px;color:var(--m)}
+.btn-srv{height:50px;border:0;border-radius:12px;background:#FFB020;color:#1A1000;font-size:15px;font-weight:700;letter-spacing:.06em;box-shadow:0 0 22px rgba(255,176,32,.5)}
+.btn-srv:disabled{opacity:.4}
+.srv-list{display:flex;flex-direction:column;gap:6px}
+.srv-item{display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:transparent;color:inherit;text-align:left;font-family:inherit;cursor:pointer}
+.srv-item small{display:block;font-size:11px;color:var(--d)}
+.srv-item b{font-family:var(--mono);font-weight:500;color:#FFB020}
+.srv-total{display:flex;justify-content:space-between;font-size:14px}
+.srv-total b{font-family:var(--mono);color:#FFB020}
+@media (max-width:900px){.pc-only{display:none !important}}
+body.in-app .pc-only{display:none !important}
+
+/* Elegir llave / comprobante */
+.start-keys{display:flex;flex-direction:column;gap:8px;margin:6px 0}
+.start-keys button{display:flex;align-items:center;gap:12px;height:52px;padding:0 16px;border:1px solid var(--line2);border-radius:12px;background:transparent;color:#fff;font-size:16px;text-align:left}
+.start-keys button:hover,.start-keys button:focus-visible{border-color:var(--g);box-shadow:0 0 12px rgba(43,255,136,.3)}
+.start-keys small{display:block;font-size:12px;color:var(--m)}
+.ticket .t-rows{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+.ticket .t-row{display:flex;justify-content:space-between;gap:12px;font-size:14px;border-bottom:1px dashed var(--line2);padding-bottom:6px}
+.ticket .t-row b{font-family:var(--mono);font-weight:500}
+.ticket .t-row.big b{font-size:22px;color:#FFB020}
+@media print{body *{visibility:hidden}#ticketDlg,#ticketDlg *{visibility:visible}#ticketDlg{position:absolute;inset:0;background:#fff;color:#000;border:0}#ticketDlg .dlg-row{display:none}}
+
+/* En el celular: la pantalla Ahora sin el gráfico grande */
+@media (max-width:760px){
+  .energy{width:min(250px,32vh)}
+  .app[data-tab=hist] .c-hist{flex:1}
+  .g-row{grid-template-columns:72px 1fr 52px 76px;padding:7px 10px;font-size:12px}
+}
+/* Modo servidor: nunca en el celular ni dentro de la app */
+@media (max-width:900px){.settings .card.pc-only{display:none !important}}
+body.in-app .settings .card.pc-only{display:none !important}
+.nt b,.nt b span{font-family:var(--mono)}
+.g-tot b{white-space:nowrap}
+.g-car span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-car b{white-space:nowrap;flex:none}
+@media (max-width:760px){
+  .g-tot b{font-size:18px}
+  .g-tot b small{font-size:11px}
+  .g-car{font-size:12px}
+  .app[data-tab=hist] .c-hist{padding:12px}
+}
+
+/* PC: Gastos con el resumen a la izquierda y la tabla a la derecha */
+@media (min-width:761px){
+  .c-hist{width:52%;display:grid;grid-template-columns:minmax(270px,44%) 1fr;grid-template-rows:auto auto 1fr;column-gap:14px;row-gap:8px}
+  .c-hist>.card-head{grid-column:1/-1}
+  .c-hist>.g-sum{grid-column:1;grid-row:2/4;align-self:start;max-height:100%;overflow:auto}
+  .c-hist>.g-h{grid-column:2;grid-row:2}
+  .c-hist>.g-table{grid-column:2;grid-row:3}
+  .c-keys .keylist{grid-template-columns:1fr}
+  .energy{width:min(200px,22vh)}
+  .c-now .phases{gap:4px}
+}
+@media (min-width:761px) and (max-height:820px){
+  .now-sum{display:none}
+  .energy{width:min(180px,20vh)}
+}
+
+.g-row .c{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.g-row .c i{display:inline-block;margin-right:6px;vertical-align:middle}
+@media (min-width:761px){
+  .g-tot b{font-size:clamp(15px,1.35vw,20px)}
+  .g-tot b small{font-size:11px}
+  .g-car{font-size:12px}
+  .g-year{font-size:11px}
+}

@@ -41,39 +41,30 @@
 
       <section class="card c-now" data-tab="now" aria-label="Estado actual">
         <div class="card-head"><h2>Ahora</h2><span class="pill" id="statusPill">—</span></div>
-        <div class="ring-wrap">
-          <svg class="ring" viewBox="0 0 220 220" role="img" id="ringSvg" aria-label="Batería estimada">
+        <div class="energy" id="energy">
+          <svg class="energy-svg" viewBox="0 0 260 260" aria-hidden="true">
             <defs>
-              <linearGradient id="ringG" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#19C8FF"/>
-                <stop offset="1" stop-color="#2BFF88"/>
-              </linearGradient>
-              <filter id="glowR" x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur stdDeviation="5" result="b"/>
-                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
+              <linearGradient id="eG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#19C8FF"/><stop offset="1" stop-color="#2BFF88"/></linearGradient>
+              <radialGradient id="eGlow" cx="50%" cy="50%" r="50%"><stop offset=".55" stop-color="#2BFF88" stop-opacity="0"/><stop offset=".8" stop-color="#2BFF88" stop-opacity=".2"/><stop offset="1" stop-color="#2BFF88" stop-opacity="0"/></radialGradient>
+              <filter id="eBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
             </defs>
-            <circle cx="110" cy="110" r="94" fill="none" stroke="#0C1611" stroke-width="12"/>
-            <g class="spin" id="ringSpin"><circle cx="110" cy="110" r="76" fill="none" stroke="#19C8FF" stroke-opacity=".55" stroke-width="2" stroke-dasharray="2 10" stroke-linecap="round"/></g>
-            <circle id="ringArc" cx="110" cy="110" r="94" fill="none" stroke="url(#ringG)" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 600" transform="rotate(-90 110 110)" filter="url(#glowR)"/>
-            <line id="ringTick" stroke="#fff" stroke-width="3" stroke-linecap="round" filter="url(#glowR)"/>
+            <circle class="e-glow" cx="130" cy="130" r="128" fill="url(#eGlow)"/>
+            <g class="e-spin1"><circle cx="130" cy="130" r="112" fill="none" stroke="url(#eG)" stroke-width="5" stroke-linecap="round" stroke-dasharray="60 34" filter="url(#eBlur)"/></g>
+            <g class="e-spin2"><circle cx="130" cy="130" r="98" fill="none" stroke="#19C8FF" stroke-opacity=".6" stroke-width="2" stroke-dasharray="2 10" stroke-linecap="round"/></g>
+            <circle cx="130" cy="130" r="86" fill="#020403" stroke="#0E1A15" stroke-width="1"/>
           </svg>
-          <div class="ring-center">
-            <span class="soc mono"><span id="socVal">--</span><small id="socUnit">%</small></span>
-            <span class="sub" id="socSub">batería estimada</span>
-            <span class="sub2">objetivo <b id="targetVal">--</b></span>
+          <div class="energy-center">
+            <span class="e-lbl" id="eLbl">CARGADO</span>
+            <span class="e-num mono" id="bigKwh">—</span>
+            <span class="e-unit" id="eUnit">kWh</span>
           </div>
         </div>
-        <div class="cable" id="cable">
-          <svg class="icon" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#19C8FF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Cargador" style="filter:drop-shadow(0 0 6px #19C8FF)">
-            <rect x="5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11.5 7 L9 12 H12 L10 17"/><path d="M16 9 H18.5 V17"/>
-          </svg>
-          <div class="cable-line"><span class="cable-flow"></span><span class="kw-pill mono"><span id="kwVal">0,00</span> <small>kW</small></span></div>
-          <svg class="icon" width="38" height="34" viewBox="0 0 26 24" fill="none" stroke="#2BFF88" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Auto" style="filter:drop-shadow(0 0 6px #2BFF88)">
-            <path d="M2 15.5 L4 10 Q5 8 7.5 8 H17 Q19.5 8 20.8 10 L24 15.5 V18 H2 Z"/><circle cx="7" cy="18" r="2"/><circle cx="19" cy="18" r="2"/>
-          </svg>
+        <div class="now-tiles">
+          <div class="nt"><span>Entrando</span><b class="mono"><span id="kwVal">0,00</span> <small>kW</small></b></div>
+          <div class="nt"><span>Tiempo</span><b class="mono" id="nowDur">—</b></div>
+          <div class="nt money-t" id="nowCostBox"><span id="nowCostLbl">Gastado</span><b class="mono" id="nowCost">—</b></div>
         </div>
-        <div class="eta"><span>termina <b id="etaEnd">—</b></span><span>faltan <b id="etaLeft">—</b></span></div>
+        <div class="now-sum" id="nowSum"></div>
         <div class="phases" id="phases"></div>
       </section>
 
@@ -96,7 +87,7 @@
         <div class="stats">
           <div class="stat"><span>Energía cargada</span><span class="v glow" id="stEnergy">—</span></div>
           <div class="stat"><span>Duración</span><span class="v" id="stDur">—</span></div>
-          <div class="stat"><span>Batería</span><span class="v" id="stBatt">—</span></div>
+          <div class="stat"><span>Precio</span><span class="v" id="stBatt">—</span></div>
           <div class="stat"><span id="stCostLbl">Costo</span><span class="v" id="stCost">—</span></div>
         </div>
       </section>
@@ -173,24 +164,30 @@
     </div>
 
     <div class="row row-bottom">
-      <section class="card blue c-hist" data-tab="hist" aria-label="Historial">
+      <section class="card blue c-hist" data-tab="hist" aria-label="Gastos">
         <div class="card-head">
-          <h2 id="histTitle">Últimos 7 días</h2>
+          <h2>Gastos</h2>
           <div class="seg" id="histSeg">
-            <button type="button" data-h="week" aria-pressed="true">Semana</button>
-            <button type="button" data-h="month" aria-pressed="false">Mes</button>
+            <button type="button" data-h="month" aria-pressed="true">Mes</button>
+            <button type="button" data-h="year" aria-pressed="false">Año</button>
           </div>
         </div>
-        <div class="hist-sub">
-          <div class="month-nav" id="monthNav">
-            <button type="button" id="mPrev" aria-label="Mes anterior">‹</button>
+        <div class="g-sum">
+          <div class="month-nav">
+            <button type="button" id="mPrev" aria-label="Anterior">‹</button>
             <span id="mLabel">—</span>
-            <button type="button" id="mNext" aria-label="Mes siguiente">›</button>
+            <button type="button" id="mNext" aria-label="Siguiente">›</button>
           </div>
-          <span class="hist-tot"><span class="mono total" id="weekTotal">—</span><span class="mono money" id="histMoney"></span></span>
+          <div class="g-tot">
+            <div><span>Gastado</span><b class="mono money" id="gMoney">—</b></div>
+            <div><span>Energía</span><b class="mono" id="gKwh">—</b></div>
+            <div><span>Cargas</span><b class="mono" id="gN">—</b></div>
+          </div>
+          <div class="g-cars" id="gCars"></div>
+          <div class="g-year" id="gYear"></div>
         </div>
-        <div class="bars" id="bars"></div>
-        <div class="legend" id="legend"></div>
+        <h3 class="g-h" id="gTableTitle">Saldo diario</h3>
+        <div class="g-table" id="gTable"></div>
       </section>
 
       <section class="card c-keys" data-tab="keys" aria-label="Llaves">
@@ -199,7 +196,7 @@
         <span class="hint" id="keyHint">Para sumar una llave: tocá «Agregar» y apoyala en el cargador.</span>
       </section>
 
-      <section class="card blue c-equip" data-tab="now hist" aria-label="Equipo">
+      <section class="card blue c-equip" data-tab="now" aria-label="Equipo">
         <h2>Equipo</h2>
         <dl class="info" id="equipInfo"></dl>
         <div class="controls">
@@ -218,7 +215,7 @@
     <button type="button" data-go="prog">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7 V12 L15 14"/></svg>Programar</button>
     <button type="button" data-go="hist">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20 V11"/><path d="M12 20 V5"/><path d="M19 20 V14"/></svg>Historial</button>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20 V11"/><path d="M12 20 V5"/><path d="M19 20 V14"/></svg>Gastos</button>
     <button type="button" data-go="keys">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12 L20 3"/><path d="M17 6 L20 9"/></svg>Llaves</button>
   </nav>
@@ -234,6 +231,29 @@
       <div class="card-head"><h2 id="carsTitle">Mis autos</h2><button type="button" class="btn-ghost" id="setCarAdd">+ Agregar auto</button></div>
       <p class="note">Con la batería de cada auto, DiBY EV estima el %. Cada vez que un auto termina lleno, aprende y ajusta el cálculo para ese auto.</p>
       <div class="set-cars" id="setCars"></div>
+    </section>
+    <section class="card set-card pc-only" id="srvCard" aria-labelledby="srvTitle">
+      <div class="card-head">
+        <h2 id="srvTitle">Modo servidor</h2>
+        <label class="switch srv-switch"><span class="switch-txt" id="srvOnTxt">Apagado</span><input type="checkbox" id="srvOn" role="switch"><span class="switch-track" aria-hidden="true"></span></label>
+      </div>
+      <p class="note">Para cargar autos de otras personas con otro precio. Solo se usa desde la PC y pide PIN. Esas cargas van aparte: no se suman a los gastos de la empresa.</p>
+      <div class="srv-pin" id="srvPinBox">
+        <label for="srvPin" class="lbl" id="srvPinLbl">PIN</label>
+        <input id="srvPin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="4 a 8 números">
+        <button type="button" class="btn-ghost wide" id="srvPinNew" hidden>Crear PIN</button>
+      </div>
+      <div class="srv-form" id="srvForm" hidden>
+        <h3>Nueva carga a un cliente</h3>
+        <label for="cliName" class="lbl">Cliente o patente</label>
+        <input id="cliName" maxlength="40" placeholder="Ej.: Juan Pérez · AF 123 XY">
+        <label for="cliPrice" class="lbl">Precio para este cliente</label>
+        <div class="money-in srv-money"><span>$</span><input id="cliPrice" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Ej.: 650"><small>por kWh</small></div>
+        <span class="note" id="cliCost"></span>
+        <button type="button" class="btn-srv" id="cliStart">INICIAR CARGA AL CLIENTE</button>
+        <h3>Cobrado a terceros</h3>
+        <div class="srv-list" id="cliList"></div>
+      </div>
     </section>
     <section class="card set-card" aria-labelledby="tariffTitle">
       <h2 id="tariffTitle">Precio del kWh</h2>
@@ -298,15 +318,23 @@
   </form>
 </dialog>
 
-<dialog id="socDlg" aria-labelledby="socDlgTitle">
+<dialog id="startDlg" aria-labelledby="startTitle">
   <div class="form">
-    <h2 id="socDlgTitle">¿Qué auto es?</h2>
-    <div class="car-chips" id="socCars"></div>
-    <h2>¿Con qué % llegó?</h2>
-    <p class="note" id="socDlgCar"></p>
-    <div class="soc-grid" id="socGrid"></div>
-    <div class="soc-other"><input id="socOther" type="number" inputmode="numeric" min="0" max="100" placeholder="Otro %" aria-label="Otro porcentaje"><button type="button" class="btn-primary" id="socOtherOk">OK</button></div>
-    <button type="button" class="btn-ghost wide" id="socSkip">No sé · mostrar solo lo cargado</button>
+    <h2 id="startTitle">¿Con qué llave cargás?</h2>
+    <p class="note">La carga queda a nombre del auto de esa llave.</p>
+    <div class="start-keys" id="startKeys"></div>
+    <button type="button" class="btn-ghost wide" id="startCancel">Cancelar</button>
+  </div>
+</dialog>
+
+<dialog id="ticketDlg" aria-labelledby="ticketTitle">
+  <div class="form ticket" id="ticket">
+    <h2 id="ticketTitle">Comprobante de carga</h2>
+    <div class="t-rows" id="ticketRows"></div>
+    <div class="dlg-row">
+      <button type="button" class="btn-ghost" id="ticketPrint">Imprimir</button>
+      <button type="button" class="btn-primary" id="ticketOk">Listo</button>
+    </div>
   </div>
 </dialog>
 

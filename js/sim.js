@@ -36,7 +36,7 @@ export class SimSource {
       limitA: 32,
       kw: 6.62,
       phases: [{ a: 28.8, v: 230 }, { a: 0, v: 231 }, { a: 0, v: 229 }],
-      session: { start, socStart: new URLSearchParams(location.search).has('sinllegada') ? null : 43, energy: 5.07, closed: false, carId: car.id, base: 0, costBase: 0, tariff: cfg.tariff, day: dkey(new Date(start)) },
+      session: { keyName: 'Teléfono Gastón', id: start, start, socStart: null, energy: 5.07, closed: false, carId: car.id, base: 0, costBase: 0, tariff: cfg.tariff, day: dkey(new Date(start)) },
       // en la demo la programación arranca apagada (carga libre), igual que en el real
       soc: 62,
       schedule: { enabled: false, mode: 'soc', soc: 80, minutes: 120, kwh: 20, startMode: 'plug', startAt: '23:00', limitA: 32 },
@@ -53,6 +53,8 @@ export class SimSource {
       days: this.makeDays(now),
       tariffSince: now - 20 * DAY,
       weather: { t: 23.4, code: 1, at: now },
+      server: { hasPin: true, on: false },
+      charges: [],
     };
     this.lastPush = now;
     setInterval(() => this.tick(), 1000);
@@ -125,7 +127,7 @@ export class SimSource {
       if (s.series.length > 4000) s.series.shift();
     }
 
-    if (s.session && !s.session.closed) {
+    if (s.session && !s.session.closed && !s.session.client) {
       const se = s.session, h = se.carId || '_';
       const day = s.days[se.day] || (s.days[se.day] = {});
       day[h] = (se.base || 0) + se.energy;
@@ -145,10 +147,13 @@ export class SimSource {
         } else if (s.status === 'SuspendedEVSE' || s.status === 'SuspendedEV') {
           s.status = 'Charging'; s.reached = false; msg = 'Carga reanudada';
         } else if (['Preparing', 'Finishing', 'Available'].includes(s.status)) {
+          const key = arg && arg.keyId ? s.keys.find((x) => x.id === arg.keyId) : null;
+          if (!key) return { ok: false, msg: 'Elegí con qué llave cargar' };
+          s.carId = key.carId;
           const k = dkey(new Date()), h = s.carId || '_';
           const day = s.days[k] || (s.days[k] = {});
           day['#' + h] = (day['#' + h] || 0) + 1;
-          s.session = { start: Date.now(), socStart: Math.round(s.soc), energy: 0, closed: false, carId: s.carId, base: day[h] || 0, costBase: day['$' + h] || 0, tariff: s.tariff, day: k };
+          s.session = { start: Date.now(), energy: 0, closed: false, carId: s.carId, keyName: key.name, base: day[h] || 0, costBase: day['$' + h] || 0, tariff: s.tariff, day: k, id: Date.now() };
           s.series = [{ t: Date.now(), kw: 0 }];
           s.status = 'Charging'; s.reached = false; msg = 'Carga iniciada';
         }
@@ -158,7 +163,9 @@ export class SimSource {
           s.meterTotal += s.session.energy;
           s.session.closed = true;
           s.session.end = Date.now();
-          s.status = 'Finishing'; s.kw = 0; msg = 'Carga detenida';
+          const se = s.session, car = s.cars.find((c) => c.id === se.carId);
+          s.charges.unshift({ id: se.id || Date.now(), start: se.start, end: se.end, kwh: se.energy, carId: se.carId, car: car ? car.name : null, key: se.keyName || null, tariff: se.tariff, cost: Math.round(se.energy * se.tariff), client: se.client || null });
+          s.status = 'Finishing'; s.kw = 0; msg = se.client ? 'Carga terminada: comprobante listo' : 'Carga detenida';
         }
         break;
       case 'unlock':
@@ -217,6 +224,20 @@ export class SimSource {
         if (s.session) { s.session.socStart = Number(arg); s.soc = Math.min(100, Number(arg) + (s.session.addedPct || 0)); }
         msg = `Llegó con ${arg} %`;
         break;
+      case 'serverMode':
+        if (arg.pin !== '1234') return { ok: false, msg: 'PIN incorrecto (en la demo es 1234)' };
+        s.server.on = !!arg.on;
+        msg = s.server.on ? 'Modo servidor activado' : 'Modo servidor apagado';
+        break;
+      case 'startClient': {
+        if (s.session && !s.session.closed) return { ok: false, msg: 'Ya hay una carga en curso' };
+        const price = Number(arg.price);
+        s.session = { start: Date.now(), energy: 0, closed: false, carId: null, tariff: price, client: { name: arg.name, price }, id: Date.now(), day: dkey(new Date()) };
+        s.series = [{ t: Date.now(), kw: 0 }];
+        s.status = 'Charging';
+        msg = `Carga para ${arg.name}`;
+        break;
+      }
       case 'setTariff':
         s.tariff = Number(arg);
         s.tariffSince = Date.now();
