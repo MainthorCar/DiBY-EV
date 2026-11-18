@@ -1,6 +1,6 @@
-import { CONFIG } from './config.js?v=1.0.2';
-import { SimSource } from './sim.js?v=1.0.2';
-import { RemoteSource, getToken, setToken, login } from './remote.js?v=1.0.2';
+import { CONFIG } from './config.js?v=1.1.0';
+import { SimSource } from './sim.js?v=1.1.0';
+import { RemoteSource, getToken, setToken, login } from './remote.js?v=1.1.0';
 
 const $ = (id) => document.getElementById(id);
 const nf = (n, d = 2) => Number(n).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -157,6 +157,9 @@ function renderNow() {
   $('bigKwh').textContent = ss ? nf(ss.energy, 2) : '—';
   $('eLbl').textContent = ss ? 'CARGADO' : !S.online ? 'DESCONECTADO' : S.status === 'Preparing' ? 'AUTO ENCHUFADO' : 'LISTO PARA CARGAR';
   $('eUnit').textContent = ss ? 'kWh' : '';
+  const goal = S.schedule.enabled && S.schedule.mode === 'energy' && S.schedule.kwh > 0 && ss && !ss.client ? S.schedule.kwh : 0;
+  $('eGoal').hidden = !goal;
+  if (goal) $('eGoal').textContent = `de ${nf(goal, goal % 1 ? 1 : 0)} kWh`;
   const en = $('energy');
   en.classList.toggle('idle', !charging);
   // El anillo gira más rápido cuanta más potencia entra (2 s a 22 kW, 10 s casi sin potencia)
@@ -271,7 +274,10 @@ function renderStats() {
 
 function renderProgSummary() {
   const sch = S.schedule;
-  if (!sch.enabled) { $('progSum').innerHTML = '<b>Carga libre</b> · corta el auto'; return; }
+  const kk = sch.enabled && sch.mode === 'energy' ? Number(sch.kwh) || 0 : 0;
+  const st0 = sch.enabled && sch.startMode === 'at' ? ` · desde <i>${sch.startAt}</i>` : '';
+  if (!kk) { $('progSum').innerHTML = `<b>Carga libre</b>${st0 || ' · corta el auto'}`; return; }
+  $('progSum').innerHTML = `Hasta <b>${nf(kk, kk % 1 ? 1 : 0)} kWh</b>${st0 || ' · al enchufar'}`; return;
   const start = sch.startMode === 'at' ? ` · desde <i>${sch.startAt}</i>` : ' · al enchufar';
   const what = sch.mode === 'time' ? 'Durante' : 'Hasta';
   $('progSum').innerHTML = `${what} <b>${targetTxt(sch)}</b>${start}`;
@@ -451,42 +457,52 @@ function setRangeFill(input) {
   input.style.setProperty('--p', `${p}%`);
 }
 
+// Programar: una sola barra en kWh. En 0 = carga libre.
+function normForm(sch) {
+  const kwh = sch.enabled && sch.mode === 'energy' ? Number(sch.kwh) || 0 : 0;
+  return { ...sch, mode: 'energy', kwh, enabled: kwh > 0 || sch.startMode === 'at' || (sch.limitA || 32) < 32 };
+}
 function renderForm() {
-  $('progOn').checked = !!form.enabled;
-  $('progOnTxt').textContent = form.enabled ? 'Activada' : 'Carga libre';
-  document.querySelector('.c-prog').classList.toggle('off', !form.enabled);
-  document.querySelectorAll('.c-prog .mode input, .c-prog .mode button, .c-prog .field input, .c-prog .field button, #modeSeg button, #saveProg')
-    .forEach((el) => { el.disabled = !form.enabled || (el.id === 'startAt' && form.startMode !== 'at'); });
-  document.querySelectorAll('#modeSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === form.mode)));
-  document.querySelectorAll('.mode').forEach((m) => m.classList.toggle('on', m.dataset.mode === form.mode));
-  const pairs = [['socRange', 'soc', 'socOut', (v) => `${v} %`, 'socChips'], ['timeRange', 'minutes', 'timeOut', hoursTxt, 'timeChips'], ['kwhRange', 'kwh', 'kwhOut', (v) => `${v} kWh`, 'kwhChips']];
-  for (const [inp, key, out, fmt, chips] of pairs) {
-    $(inp).value = form[key];
-    setRangeFill($(inp));
-    $(out).textContent = fmt(form[key]);
-    document.querySelectorAll(`#${chips} .chip`).forEach((c) => c.setAttribute('aria-pressed', String(Number(c.dataset.v) === Number(form[key]))));
-  }
+  const k = Number(form.kwh) || 0;
+  $('kwhRange').value = Math.min(80, Math.round(k / 5) * 5);
+  setRangeFill($('kwhRange'));
+  if (document.activeElement !== $('kwhIn')) $('kwhIn').value = k ? String(k) : '';
+  $('kwhOut').textContent = k ? `${nf(k, k % 1 ? 1 : 0)} kWh` : 'Libre';
+  $('kwhOut').classList.toggle('free', !k);
+  const on = k > 0 || form.startMode === 'at';
+  $('progState').textContent = k > 0 ? `Corta a ${nf(k, k % 1 ? 1 : 0)} kWh` : 'Carga libre';
+  $('progState').classList.toggle('on', on);
+  document.querySelector('.c-prog').classList.toggle('active', on);
   document.querySelectorAll('[data-start]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.start === form.startMode)));
   $('startAt').value = form.startAt;
+  $('startAt').disabled = form.startMode !== 'at';
   $('ampRange').value = form.limitA;
   setRangeFill($('ampRange'));
   $('ampOut').textContent = `${form.limitA} A`;
 }
 
-document.querySelectorAll('#modeSeg button').forEach((b) => b.addEventListener('click', () => { form.mode = b.dataset.mode; renderForm(); }));
-[['socRange', 'soc', 'socChips'], ['timeRange', 'minutes', 'timeChips'], ['kwhRange', 'kwh', 'kwhChips']].forEach(([inp, key, chips]) => {
-  $(inp).addEventListener('input', (e) => { form[key] = Number(e.target.value); renderForm(); });
-  document.querySelectorAll(`#${chips} .chip`).forEach((c) => c.addEventListener('click', () => { form[key] = Number(c.dataset.v); renderForm(); }));
-});
-document.querySelectorAll('[data-start]').forEach((b) => b.addEventListener('click', () => { form.startMode = b.dataset.start; renderForm(); }));
-$('startAt').addEventListener('change', (e) => { form.startAt = e.target.value || '23:00'; });
-$('ampRange').addEventListener('input', (e) => { form.limitA = Number(e.target.value); renderForm(); });
-$('saveProg').addEventListener('click', () => run('setSchedule', { ...form }));
-$('progOn').addEventListener('change', (e) => {
-  form.enabled = e.target.checked;
+// Se guarda solo, un momento después de soltar o escribir
+let saveTimer;
+function saveProg(delay = 500) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    form.enabled = (Number(form.kwh) || 0) > 0 || form.startMode === 'at' || form.limitA < 32;
+    form.mode = 'energy';
+    run('setSchedule', { ...form, kwh: Number(form.kwh) || 0 });
+  }, delay);
+}
+$('kwhRange').addEventListener('input', (e) => { form.kwh = Number(e.target.value); renderForm(); });
+$('kwhRange').addEventListener('change', () => saveProg(100));
+$('kwhIn').addEventListener('input', (e) => {
+  const v = Number(String(e.target.value).replace(',', '.'));
+  form.kwh = Number.isFinite(v) && v > 0 ? Math.min(200, v) : 0;
   renderForm();
-  run('setSchedule', { ...form });
+  saveProg(1200);
 });
+document.querySelectorAll('[data-start]').forEach((b) => b.addEventListener('click', () => { form.startMode = b.dataset.start; renderForm(); saveProg(100); }));
+$('startAt').addEventListener('change', (e) => { form.startAt = e.target.value || '23:00'; saveProg(300); });
+$('ampRange').addEventListener('input', (e) => { form.limitA = Number(e.target.value); renderForm(); });
+$('ampRange').addEventListener('change', () => saveProg(100));
 
 /* ---------- Controles ---------- */
 
@@ -824,7 +840,7 @@ function start(src) {
   }
   source.subscribe((st) => {
     S = st;
-    if (!form) { form = { ...st.schedule }; renderForm(); }
+    if (!form) { form = normForm(st.schedule); renderForm(); }
     document.querySelector('.c-keys').classList.toggle('learning', !!S.learning || $('addKey').disabled);
     render();
     renderDiag();

@@ -467,7 +467,7 @@ export class Charger extends DurableObject {
     if (!sch.enabled) return; // carga libre: corta el auto
     let hit = false;
     if (sch.mode === 'soc') hit = d.soc != null && d.soc >= sch.soc;
-    else if (sch.mode === 'energy') hit = s.energy >= sch.kwh;
+    else if (sch.mode === 'energy') hit = sch.kwh > 0 && s.energy >= sch.kwh; // 0 = carga libre
     else hit = (Date.now() - s.start) / 60000 >= sch.minutes;
     if (hit) {
       d.reached = true;
@@ -642,7 +642,7 @@ export class Charger extends DurableObject {
           mode: ['soc', 'time', 'energy'].includes(arg.mode) ? arg.mode : 'soc',
           soc: n(arg.soc, 20, 100, 80),
           minutes: n(arg.minutes, 15, 1440, 120),
-          kwh: n(arg.kwh, 1, 200, 20),
+          kwh: n(arg.kwh, 0, 200, 0),
           startMode: arg.startMode === 'at' ? 'at' : 'plug',
           startAt: /^\d{2}:\d{2}$/.test(arg.startAt) ? arg.startAt : '23:00',
           limitA: n(arg.limitA, 6, 32, 32),

@@ -93,7 +93,7 @@ export class SimSource {
     const sch = s.schedule;
     if (!s.session || !sch.enabled) return false;
     if (sch.mode === 'soc') return s.soc >= sch.soc;
-    if (sch.mode === 'energy') return s.session.energy >= sch.kwh;
+    if (sch.mode === 'energy') return sch.kwh > 0 && s.session.energy >= sch.kwh;
     return (s.now - s.session.start) / 60000 >= sch.minutes;
   }
 

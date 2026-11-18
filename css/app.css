@@ -571,3 +571,18 @@ body.in-app .settings .card.pc-only{display:none !important}
 .g-tot{grid-template-columns:auto auto auto;justify-content:space-between;column-gap:14px}
 .g-tot>div:first-child{text-align:left}
 .g-tot>div:last-child{text-align:right}
+
+/* Programar por kWh */
+.prog-state{font-size:13px;font-weight:600;color:var(--m);padding:4px 10px;border:1px solid var(--line2);border-radius:999px}
+.prog-state.on{color:#000;background:var(--g);border-color:var(--g);box-shadow:0 0 12px rgba(43,255,136,.5)}
+.c-prog.active{border-color:rgba(43,255,136,.45);box-shadow:0 0 22px rgba(43,255,136,.08)}
+.kwh-prog .big.free{color:var(--t2);text-shadow:none}
+.kwh-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--d);margin-top:-4px}
+.kwh-manual{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
+.kwh-manual label{font-size:13px;color:var(--m)}
+.kwh-box{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:#000}
+.kwh-box:focus-within{border-color:var(--g);box-shadow:0 0 12px rgba(43,255,136,.3)}
+.kwh-box input{width:70px;border:0;background:transparent;color:#fff;font-family:var(--mono);font-size:18px;outline:none;text-align:right;color-scheme:dark}
+.kwh-box span{font-size:13px;color:var(--g)}
+.c-prog .hint{font-size:12px;color:var(--d)}
+.e-goal{font-size:13px;color:var(--m);margin-top:2px;font-family:var(--mono)}
