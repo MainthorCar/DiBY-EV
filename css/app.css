@@ -567,3 +567,7 @@ body.in-app .settings .card.pc-only{display:none !important}
   .g-car{font-size:12px}
   .g-year{font-size:11px}
 }
+/* Totales de Gastos: cada columna toma el ancho de su número, sin pisarse */
+.g-tot{grid-template-columns:auto auto auto;justify-content:space-between;column-gap:14px}
+.g-tot>div:first-child{text-align:left}
+.g-tot>div:last-child{text-align:right}

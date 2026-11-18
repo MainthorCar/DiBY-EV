@@ -1,6 +1,6 @@
 // Configuración general. Lo que se cambia a mano está acá.
 export const CONFIG = {
-  version: '1.0.0',
+  version: '1.0.1',
 
   // Precio por kWh para calcular el costo de cada carga (en pesos).
   tariff: 150,
