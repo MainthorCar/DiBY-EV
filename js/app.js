@@ -1,6 +1,6 @@
-import { CONFIG } from './config.js?v=1.1.0';
-import { SimSource } from './sim.js?v=1.1.0';
-import { RemoteSource, getToken, setToken, login } from './remote.js?v=1.1.0';
+import { CONFIG } from './config.js?v=1.2.0';
+import { SimSource } from './sim.js?v=1.2.0';
+import { RemoteSource, getToken, setToken, login, serverInfo } from './remote.js?v=1.2.0';
 
 const $ = (id) => document.getElementById(id);
 const nf = (n, d = 2) => Number(n).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -724,6 +724,7 @@ $('setCarAdd').addEventListener('click', () => openCarForm(null));
 function openSettings() {
   if (!S) return;
   renderServer();
+  renderOpenPin();
   setCarsSig = '';
   renderSetCars();
   $('tariffIn').value = S.tariff != null ? S.tariff : '';
@@ -845,24 +846,88 @@ function start(src) {
     render();
     renderDiag();
     maybeTicket();
-    if (!$('settings').hidden) { renderSetCars(); renderServer(); }
+    if (!$('settings').hidden) { renderSetCars(); renderServer(); renderOpenPin(); }
   });
 }
 
-function askLogin() {
+let pinBuf = '';
+function showPinMode(on) {
+  $('pinMode').hidden = !on;
+  $('passMode').hidden = on;
+  $('loginErr').hidden = true;
+  pinBuf = '';
+  drawPin();
+  if (on) $('pinIn').focus(); else $('loginPass').focus();
+}
+function drawPin() {
+  $('pinDots').innerHTML = Array.from({ length: 6 }, (_, i) => `<i class="${i < pinBuf.length ? 'on' : ''}${i >= 4 ? ' opt' : ''}"></i>`).join('');
+}
+$('pinPad').innerHTML = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'borrar', '0', 'ok']
+  .map((k) => `<button type="button" data-k="${k}" class="${k.length > 1 ? 'pk-fn' : ''}" aria-label="${k === 'borrar' ? 'Borrar' : k === 'ok' ? 'Entrar' : k}">${k === 'borrar' ? '⌫' : k === 'ok' ? 'OK' : k}</button>`).join('');
+let pinBusy = false;
+async function tryPin() {
+  if (pinBusy || pinBuf.length < 4) return;
+  pinBusy = true;
+  const r = await login(CONFIG.server, { pin: pinBuf }).catch(() => ({ ok: false }));
+  pinBusy = false;
+  if (r.ok) { $('loginDlg').close(); start(new RemoteSource(CONFIG, askLogin)); return; }
+  pinBuf = ''; drawPin();
+  $('loginErr').textContent = r.locked ? `Demasiados intentos. Esperá ${r.wait || 10} minutos o entrá con la clave.` : r.left != null ? `PIN incorrecto · te quedan ${r.left} intentos` : 'No se pudo entrar';
+  $('loginErr').hidden = false;
+  $('pinDots').classList.remove('shake'); void $('pinDots').offsetWidth; $('pinDots').classList.add('shake');
+}
+function pinKey(k) {
+  if (k === 'borrar') pinBuf = pinBuf.slice(0, -1);
+  else if (k === 'ok') { tryPin(); return; }
+  else if (/^\d$/.test(k) && pinBuf.length < 6) pinBuf += k;
+  $('loginErr').hidden = true;
+  drawPin();
+}
+$('pinPad').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) pinKey(b.dataset.k); });
+document.addEventListener('keydown', (e) => {
+  if (!$('loginDlg').open || $('pinMode').hidden) return;
+  if (/^\d$/.test(e.key)) { e.preventDefault(); pinKey(e.key); }
+  else if (e.key === 'Backspace') { e.preventDefault(); pinKey('borrar'); }
+  else if (e.key === 'Enter') { e.preventDefault(); tryPin(); }
+});
+$('pinMode').addEventListener('click', (e) => { if (!e.target.closest('button')) $('pinIn').focus(); });
+$('usePass').addEventListener('click', () => showPinMode(false));
+$('usePin').addEventListener('click', () => showPinMode(true));
+
+async function askLogin() {
   setToken(null);
   $('loginErr').hidden = true;
   if (!$('loginDlg').open) $('loginDlg').showModal();
-  $('loginPass').focus();
+  const info = await serverInfo(CONFIG.server);
+  $('usePin').hidden = !info.pin;
+  showPinMode(!!info.pin);
 }
 
 $('loginDlg').addEventListener('cancel', (e) => e.preventDefault());
 $('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const ok = await login(CONFIG.server, $('loginPass').value).catch(() => false);
-  if (!ok) { $('loginErr').hidden = false; return; }
+  if (!$('pinMode').hidden) { tryPin(); return; }
+  const r = await login(CONFIG.server, { password: $('loginPass').value }).catch(() => ({ ok: false }));
+  if (!r.ok) { $('loginErr').textContent = 'Clave incorrecta'; $('loginErr').hidden = false; return; }
+  $('loginPass').value = '';
   $('loginDlg').close();
   start(new RemoteSource(CONFIG, askLogin));
+});
+
+/* PIN para abrir (Ajustes) */
+function renderOpenPin() {
+  if (!S) return;
+  $('opState').textContent = S.openPin ? 'Hay un PIN para abrir guardado.' : 'Todavía no hay PIN: se entra con la clave.';
+  $('opDel').hidden = !S.openPin;
+}
+$('opSave').addEventListener('click', async () => {
+  const r = await run('setOpenPin', { password: $('opPass').value, pin: $('opPin').value });
+  if (r && r.ok) { $('opPass').value = ''; $('opPin').value = ''; }
+});
+$('opDel').addEventListener('click', async () => {
+  if (!$('opPass').value) { toast('Escribí la clave para quitar el PIN', true); $('opPass').focus(); return; }
+  const r = await run('setOpenPin', { password: $('opPass').value, pin: '' });
+  if (r && r.ok) $('opPass').value = '';
 });
 
 const params = new URLSearchParams(location.search);

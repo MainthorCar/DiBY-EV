@@ -34,8 +34,27 @@ export default {
     // La página pide la clave y recibe un permiso
     if (url.pathname === '/api/login' && req.method === 'POST') {
       const body = await req.json().catch(() => ({}));
+      if (body.pin != null) {
+        // PIN para abrir: lo revisa el servidor, con límite de intentos
+        const r = await stub.fetch('https://do/pin', { method: 'POST', body: JSON.stringify({ pin: String(body.pin), ip: req.headers.get('CF-Connecting-IP') || '' }) });
+        const j = await r.json();
+        if (!j.ok) return json(j, j.locked ? 429 : 401, cors);
+        return json({ ok: true, token: await panelToken(env) }, 200, cors);
+      }
       if (!env.PANEL_PASSWORD || body.password !== env.PANEL_PASSWORD) return json({ ok: false }, 401, cors);
       return json({ ok: true, token: await panelToken(env) }, 200, cors);
+    }
+
+    // ¿Hay PIN para abrir? (la página muestra el teclado de PIN o la clave)
+    if (url.pathname === '/api/info') {
+      const r = await stub.fetch('https://do/info');
+      return json(await r.json(), 200, cors);
+    }
+
+    // ¿El permiso guardado sigue valiendo? (para no pedir la clave por un corte de internet)
+    if (url.pathname === '/api/check') {
+      const ok = url.searchParams.get('token') === (await panelToken(env));
+      return json({ ok }, ok ? 200 : 401, cors);
     }
 
     // La página recibe los datos en vivo y manda órdenes por acá

@@ -586,3 +586,24 @@ body.in-app .settings .card.pc-only{display:none !important}
 .kwh-box span{font-size:13px;color:var(--g)}
 .c-prog .hint{font-size:12px;color:var(--d)}
 .e-goal{font-size:13px;color:var(--m);margin-top:2px;font-family:var(--mono)}
+
+/* PIN para abrir */
+.login #pinMode,.login #passMode{display:flex;flex-direction:column;gap:12px}
+.login [hidden]{display:none !important}
+.pin-dots{display:flex;justify-content:center;gap:12px;margin:4px 0 6px}
+.pin-dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--line2)}
+.pin-dots i.opt{border-style:dashed;opacity:.6}
+.pin-dots i.on{background:var(--g);border-color:var(--g);box-shadow:0 0 10px var(--g);opacity:1}
+.pin-dots.shake{animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.pin-hidden{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.pin-pad{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.pin-pad button{height:60px;border:1px solid var(--line2);border-radius:14px;background:#050807;color:#fff;font-family:var(--mono);font-size:24px}
+.pin-pad button:hover,.pin-pad button:focus-visible{border-color:var(--g);box-shadow:0 0 12px rgba(43,255,136,.3)}
+.pin-pad button:active{transform:scale(.96);background:rgba(43,255,136,.12)}
+.pin-pad .pk-fn{font-family:var(--sans);font-size:18px;color:var(--t2)}
+.pin-pad [data-k=ok]{background:var(--g);color:#001A0B;border-color:var(--g);font-weight:700;box-shadow:0 0 16px rgba(43,255,136,.45)}
+.link-btn{background:transparent;border:0;color:var(--b);font-size:14px;text-decoration:underline;padding:6px;align-self:center}
+.set-in{height:46px;border:1px solid var(--line2);border-radius:10px;background:#000;color:#fff;font:inherit;font-size:16px;padding:0 14px}
+.set-in:focus{border-color:var(--g);outline:none;box-shadow:0 0 12px rgba(43,255,136,.3)}
+.set-card .dlg-row .btn-primary{margin-top:0;height:44px;align-self:stretch}

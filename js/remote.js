@@ -8,16 +8,29 @@ export function setToken(t) {
   try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {}
 }
 
-export async function login(server, password) {
+// cred: { password } o { pin }. Devuelve { ok, locked, left, wait }
+export async function login(server, cred) {
   const r = await fetch(server + '/api/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(typeof cred === 'string' ? { password: cred } : cred),
   });
-  if (!r.ok) return false;
-  const j = await r.json();
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.token) return { ok: false, ...j };
   setToken(j.token);
-  return true;
+  return { ok: true };
+}
+
+export async function serverInfo(server) {
+  try { return await (await fetch(server + '/api/info')).json(); } catch { return {}; }
+}
+
+// ¿El permiso guardado sigue valiendo? true / false / null (sin conexión: no se sabe)
+export async function checkToken(server) {
+  try {
+    const r = await fetch(server + '/api/check?token=' + encodeURIComponent(getToken() || ''));
+    return r.status === 200 ? true : r.status === 401 ? false : null;
+  } catch { return null; }
 }
 
 export class RemoteSource {
@@ -55,7 +68,17 @@ export class RemoteSource {
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
-      if (!opened && ++this.fails >= 3 && !this.s) { this.onAuthFail && this.onAuthFail(); return; }
+      if (!opened && ++this.fails >= 3 && !this.s && !this.checking) {
+        // Antes de pedir la clave, confirmar que el permiso de verdad no sirve (y no que solo falta internet)
+        this.checking = true;
+        checkToken(this.cfg.server).then((v) => {
+          this.checking = false;
+          if (v === false) { this.onAuthFail && this.onAuthFail(); return; }
+          this.fails = 0;
+          setTimeout(() => this.connect(), 4000);
+        });
+        return;
+      }
       if (this.s) { this.s.link = 'down'; this.s.online = false; this.s.status = 'Offline'; this.emit(); }
       setTimeout(() => this.connect(), Math.min(15000, 2000 * (this.fails || 1)));
     };

@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css?v=1.1.0">
+<link rel="stylesheet" href="css/app.css?v=1.2.0">
 </head>
 <body>
 <div class="app" data-tab="now">
@@ -223,6 +223,19 @@
         <div class="srv-list" id="cliList"></div>
       </div>
     </section>
+    <section class="card set-card" aria-labelledby="openPinTitle">
+      <h2 id="openPinTitle">PIN para abrir</h2>
+      <p class="note">En vez de escribir la clave cada vez, entrás con un PIN de 4 a 6 números. Para crearlo o quitarlo se pide la clave una vez. Si alguien se equivoca 5 veces seguidas, se bloquea 10 minutos.</p>
+      <label for="opPass" class="lbl">Clave de acceso</label>
+      <input id="opPass" class="set-in" type="password" autocomplete="current-password">
+      <label for="opPin" class="lbl">PIN nuevo</label>
+      <input id="opPin" class="set-in" type="password" inputmode="numeric" maxlength="6" placeholder="4 a 6 números" autocomplete="off">
+      <span class="note" id="opState"></span>
+      <div class="dlg-row">
+        <button type="button" class="btn-danger" id="opDel">Quitar PIN</button>
+        <button type="button" class="btn-primary" id="opSave">Guardar PIN</button>
+      </div>
+    </section>
     <section class="card set-card" aria-labelledby="tariffTitle">
       <h2 id="tariffTitle">Precio del kWh</h2>
       <p class="note">Se usa para calcular cuánto cuesta cada carga y el total de cada mes. Cada carga guarda el precio que tenía ese día: si lo cambiás, los meses anteriores no se modifican.</p>
@@ -309,13 +322,23 @@
 <dialog id="loginDlg" aria-labelledby="loginTitle">
   <form id="loginForm" class="login">
     <span class="brand-name">DiBY <em>EV</em></span>
-    <label id="loginTitle" for="loginPass">Clave de acceso</label>
-    <input id="loginPass" type="password" autocomplete="current-password" required>
+    <div id="pinMode" hidden>
+      <label id="pinTitle" for="pinIn">Ingresá tu PIN</label>
+      <div class="pin-dots" id="pinDots" aria-hidden="true"></div>
+      <input id="pinIn" class="pin-hidden" type="password" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="PIN">
+      <div class="pin-pad" id="pinPad"></div>
+      <button type="button" class="link-btn" id="usePass">Entrar con la clave</button>
+    </div>
+    <div id="passMode">
+      <label id="loginTitle" for="loginPass">Clave de acceso</label>
+      <input id="loginPass" type="password" autocomplete="current-password">
+      <button type="submit" class="btn-primary">Entrar</button>
+      <button type="button" class="link-btn" id="usePin" hidden>Entrar con el PIN</button>
+    </div>
     <span class="login-err" id="loginErr" hidden>Clave incorrecta</span>
-    <button type="submit" class="btn-primary">Entrar</button>
   </form>
 </dialog>
 
-<script type="module" src="js/app.js?v=1.1.0"></script>
+<script type="module" src="js/app.js?v=1.2.0"></script>
 </body>
 </html>

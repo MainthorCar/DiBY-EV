@@ -238,6 +238,14 @@ export class SimSource {
         msg = `Carga para ${arg.name}`;
         break;
       }
+      case 'setOpenPin': {
+        if (!arg || arg.password !== 'demo') return { ok: false, msg: 'Clave incorrecta (en la demo es "demo")' };
+        const pin = String(arg.pin || '');
+        if (pin && !/^\d{4,6}$/.test(pin)) return { ok: false, msg: 'El PIN tiene que ser de 4 a 6 números' };
+        s.openPin = !!pin;
+        msg = pin ? 'PIN guardado' : 'PIN quitado';
+        break;
+      }
       case 'setTariff':
         s.tariff = Number(arg);
         s.tariffSince = Date.now();

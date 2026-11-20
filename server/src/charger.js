@@ -70,6 +70,21 @@ export class Charger extends DurableObject {
   async fetch(req) {
     const url = new URL(req.url);
 
+    // PIN para abrir la página
+    if (url.pathname === '/info') return Response.json({ pin: !!this.d.openPin });
+    if (url.pathname === '/pin') {
+      const { pin, ip } = await req.json().catch(() => ({}));
+      const now = Date.now();
+      const f = (this.pinFails = this.pinFails || {});
+      const me = f[ip] || { n: 0, until: 0 };
+      if (me.until > now) return Response.json({ ok: false, locked: true, wait: Math.ceil((me.until - now) / 60000) });
+      if (this.d.openPin && (await sha('open:' + pin)) === this.d.openPin) { delete f[ip]; return Response.json({ ok: true }); }
+      me.n += 1;
+      if (me.n >= 5) { me.n = 0; me.until = now + 10 * 60000; } // 5 errores: 10 minutos de espera
+      f[ip] = me;
+      return Response.json({ ok: false, left: me.until > now ? 0 : 5 - me.n, locked: me.until > now, wait: me.until > now ? 10 : 0 });
+    }
+
     // Registro de intentos de conexión del cargador (para diagnosticar)
     if (url.pathname === '/attempt') {
       const a = await req.json().catch(() => null);
@@ -742,6 +757,15 @@ export class Charger extends DurableObject {
         if (s) { s.tariff = v; this.book(s); }
         return { ok: true, msg: 'Precio guardado' };
       }
+      case 'setOpenPin': {
+        // PIN para abrir: se crea o se quita con la clave
+        if (!this.env.PANEL_PASSWORD || arg?.password !== this.env.PANEL_PASSWORD) return { ok: false, msg: 'La clave no es correcta' };
+        if (arg.pin === '' || arg.pin == null) { d.openPin = null; return { ok: true, msg: 'PIN para abrir quitado' }; }
+        const pin = String(arg.pin);
+        if (!/^\d{4,6}$/.test(pin)) return { ok: false, msg: 'El PIN tiene que ser de 4 a 6 números' };
+        d.openPin = await sha('open:' + pin);
+        return { ok: true, msg: 'PIN para abrir guardado' };
+      }
       case 'serverPin': {
         // Crear o cambiar el PIN del modo servidor
         const pin = String(arg?.pin || '');
@@ -919,6 +943,7 @@ export class Charger extends DurableObject {
       weather: d.weather || null,
       charges: (d.charges || []).slice(0, 600),
       server: { hasPin: !!(d.server && d.server.pinHash), on: !!(d.server && d.server.on) },
+      openPin: !!d.openPin,
       offeredA: d.offeredA ?? null,
       offeredKw: d.offeredKw ?? null,
       hz: d.hz ?? null,
